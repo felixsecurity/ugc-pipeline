@@ -26,7 +26,7 @@ It should behave like an advertising art director, not a literal prompt relay. M
 clients will provide incomplete direction, so Process B expands weak briefs into a
 concrete commercial image concept before calling the image model.
 
-For this image-generation MVP, Process B is represented by:
+For this static-image-to-video MVP, Process B is represented by:
 
 ```sh
 ./brain/nano_banana.py --request request.json
@@ -34,7 +34,9 @@ For this image-generation MVP, Process B is represented by:
 
 The script reads `request.json` from the caller's current working directory,
 normalizes the prompt into an advertising-grade generation brief, calls fal.ai
-Nano Banana, and writes all outputs into that same request directory.
+Nano Banana for static image generation only, then renders a silent short-form
+MP4 locally with ffmpeg effects. All outputs are written into that same request
+directory.
 
 Process B accepts either:
 
@@ -81,17 +83,35 @@ copy when appropriate. It should avoid distorted packaging, misspelled visible
 text, extra logos, watermarks, clutter, gimmicky effects, uncanny anatomy, and
 unrealistic product interaction.
 
+Process B always produces a silent `9:16` short video after the static images are
+downloaded. Nano Banana remains the only AI generation cost and is capped at four
+static images per clip. Video motion is created locally with ffmpeg: Ken Burns
+zoom/pan movement, fast punch zooms, pullbacks, whip pans, short visual beats,
+kinetic hook/payoff/CTA text, contrast and saturation polish, vignette, and
+lightweight impact overlays. Audio is ignored.
+
+Marketing text must not be baked into Nano Banana images. The image prompt should
+ask for clean photorealistic visuals with no captions, slogans, hook text, CTA
+text, banners, stickers, or UI. Only real text printed on the physical product or
+packaging should be preserved. All ad copy belongs in the ffmpeg overlay stage,
+using high-contrast bold white text with black outline/shadow and pop-in motion
+so zooms and pans do not distort the message.
+
 Process B writes:
 
 - `fal_result.json`
 - `output_images/`
+- `output_videos/final.mp4`
+- `video_plan.json`
 - `learning.md`
 - `status.json`
 
 `fal_result.json` records both the original client `prompt` and the generated
-`effective_prompt`, plus the selected `prompt_strategy`. `learning.md` also
-includes the effective prompt so Process C and human operators can evaluate
-whether the advertising interpretation was appropriate.
+`effective_prompt`, plus the selected `prompt_strategy`, static image count, and
+video output metadata. `video_plan.json` records the local edit decisions and
+effect list. `learning.md` also includes the effective prompt so Process C and
+human operators can evaluate whether the advertising interpretation and video
+edit were appropriate.
 
 Because all output paths are based on the caller's directory, the supervisor must set the working directory to the specific request folder before dropping privileges.
 
@@ -108,6 +128,8 @@ For this prototype, Process C should inspect:
 - `request_check.json`
 - `fal_result.json`
 - `output_images/`
+- `output_videos/`
+- `video_plan.json`
 - `learning.md`
 - `status.json`
 
@@ -116,7 +138,8 @@ It should answer:
 - Did Process B satisfy the user request?
 - Was the API response valid and relevant?
 - Did Process A reject obvious nudity before execution?
-- Does the generated or edited image avoid disallowed nudity?
+- Do the generated or edited images and final silent video avoid disallowed nudity?
+- Is the video readable, silent, and based on no more than four Nano Banana images?
 - Was the output written only inside the user's private request folder?
 - Does `learning.md` contain a useful general observation?
 - Is there anything that should be escalated to a human operator?
@@ -129,4 +152,8 @@ The MVP Process C implementation is:
 ./brain/evaluate_image.py <request-dir>
 ```
 
-It writes `evaluation.md` and performs structural checks: expected files exist, Process A accepted the request, Process B succeeded, and at least one local output image exists. Human visual review is still required for prompt match and nudity verification.
+It writes `evaluation.md` and performs structural checks: expected files exist,
+Process A accepted the request, Process B succeeded, at least one local output
+image exists, the silent MP4 exists, and the four-image Nano Banana cap was
+respected. Human visual review is still required for prompt match, text overlay
+readability, motion quality, and nudity verification.

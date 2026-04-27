@@ -17,7 +17,8 @@ Process B
 - Then script writing -> script.md
 - Then img prompts, video, audit prompts (in logical order, usually images needed for video)
 - as an example client_Brutus/request_5/prompts.json (a list in order defining prompts, inputs, models for each)
-- Make concrete using APIs of fal.ai and elevenlabs
+- Make concrete using fal.ai Nano Banana for static images only, with no more than four generated images per final clip.
+- Always turn the static images into a silent 9:16 MP4 with local ffmpeg effects such as zooms, pans, rapid visual beats, text overlays, color polish, and a CTA. Audio is ignored for now.
 - Self-document -> learning.md describe what steps were taken, whether they worked as expected and what should be improved.
 
 Process C

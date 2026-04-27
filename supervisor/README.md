@@ -17,13 +17,14 @@ This directory should be `700` and owned by `root:root`.
   - Rejects obvious nudity in prompt text and image references before execution.
   - Copies local image inputs into the private request folder.
   - Writes `request.json`.
-  - Runs Nano Banana Process B as the client user.
+  - Runs Nano Banana Process B as the client user, capped at four static images.
+  - Renders a silent short-form MP4 from those images with local ffmpeg effects.
   - Runs basic Process C evaluation as the client user.
-  - Writes `status.json`, `learning.md`, and `evaluation.md` in the request folder.
+  - Writes `status.json`, `learning.md`, `output_images/`, `output_videos/final.mp4`, `video_plan.json`, and `evaluation.md` in the request folder.
 
 - `publish_debug_image.sh <request-dir> [label]`
   - Explicitly publishes selected request outputs to nginx for debugging.
-  - Copies images from `output_images/` into `/var/www/html/debug/ugc/<request-id>/`.
+  - Copies images from `output_images/` and `output_videos/final.mp4` into `/var/www/html/debug/ugc/<request-id>/`.
   - Creates a per-request debug page and refreshes `/var/www/html/debug/ugc/index.html`.
   - Does not run automatically from Process B; publishing remains a supervisor/debug decision.
 
@@ -82,6 +83,12 @@ python3 -m venv /opt/ugc-pipeline-venv
 /opt/ugc-pipeline-venv/bin/pip install -r /srv/ugc-pipeline/requirements.txt
 chown -R root:root /opt/ugc-pipeline-venv
 chmod -R a+rX /opt/ugc-pipeline-venv
+```
+
+Install ffmpeg for local silent video rendering:
+
+```sh
+apt-get install -y ffmpeg
 ```
 
 Example text-only request:

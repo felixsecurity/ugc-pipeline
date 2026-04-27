@@ -20,7 +20,7 @@ home_dir="$(client_home_for "$client_id")"
 load_fal_key
 ensure_client_user_and_home "$client_id"
 
-request_id="$(date -u +%Y%m%dT%H%M%S%NZ)-image"
+request_id="$(date -u +%Y%m%dT%H%M%S%NZ)-video"
 request_dir="$home_dir/requests/$request_id"
 inputs_dir="$request_dir/inputs"
 
@@ -64,7 +64,7 @@ request = {
     "client_id": client_id,
     "prompt": prompt,
     "image_inputs": image_inputs,
-    "num_images": 1,
+    "num_images": 4,
     "aspect_ratio": "auto",
     "output_format": "png",
     "resolution": "1K",

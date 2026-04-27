@@ -31,18 +31,27 @@ publish_dir="$publish_root/$safe_request_id"
 install -d -m 755 -o root -g root "$publish_dir"
 
 image_count=0
+image_names=()
 while IFS= read -r image_path; do
   image_count=$((image_count + 1))
   extension="${image_path##*.}"
   if [[ "$extension" == "$image_path" ]]; then
     extension="png"
   fi
-  install -m 644 -o root -g root "$image_path" "$publish_dir/$(printf '%02d.%s' "$image_count" "$extension")"
+  image_name="$(printf '%02d.%s' "$image_count" "$extension")"
+  image_names+=("$image_name")
+  install -m 644 -o root -g root "$image_path" "$publish_dir/$image_name"
 done < <(find "$request_dir/output_images" -maxdepth 1 -type f | sort)
 
 if [[ "$image_count" -eq 0 ]]; then
   echo "no output images found in: $request_dir/output_images" >&2
   exit 1
+fi
+
+video_name=""
+if [[ -f "$request_dir/output_videos/final.mp4" ]]; then
+  video_name="final.mp4"
+  install -m 644 -o root -g root "$request_dir/output_videos/final.mp4" "$publish_dir/$video_name"
 fi
 
 prompt=""
@@ -72,7 +81,7 @@ PY
 )"
 fi
 
-python3 - "$publish_dir/index.html" "$label" "$safe_request_id" "$prompt" "$mode" "$model" "$image_count" <<'PY'
+python3 - "$publish_dir/index.html" "$label" "$safe_request_id" "$prompt" "$mode" "$model" "$video_name" "${image_names[@]}" <<'PY'
 import html
 import sys
 from pathlib import Path
@@ -83,11 +92,17 @@ request_id = sys.argv[3]
 prompt = sys.argv[4]
 mode = sys.argv[5]
 model = sys.argv[6]
-image_count = int(sys.argv[7])
+video_name = sys.argv[7]
+image_names = sys.argv[8:]
 
 figures = []
-for index in range(1, image_count + 1):
-    name = f"{index:02d}.png"
+if video_name:
+    figures.append(
+        f'<figure><video src="{html.escape(video_name)}" controls playsinline muted loop></video>'
+        f'<figcaption>Silent final video</figcaption></figure>'
+    )
+
+for index, name in enumerate(image_names, start=1):
     figures.append(
         f'<figure><img src="{html.escape(name)}" alt="Debug output {index}">'
         f'<figcaption>Output {index}</figcaption></figure>'
@@ -105,7 +120,7 @@ output_path.write_text(
     main {{ max-width: 1100px; margin: 0 auto; }}
     .meta {{ margin-bottom: 24px; padding: 16px; background: white; border: 1px solid #ddd; }}
     figure {{ margin: 0 0 32px; padding: 16px; background: white; border: 1px solid #ddd; }}
-    img {{ max-width: 100%; height: auto; display: block; }}
+    img, video {{ max-width: 100%; height: auto; display: block; }}
     figcaption {{ margin-top: 12px; font-weight: 600; }}
     code {{ overflow-wrap: anywhere; }}
   </style>
