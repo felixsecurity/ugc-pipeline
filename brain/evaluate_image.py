@@ -51,6 +51,9 @@ def main(argv: list[str]) -> int:
     mode = result.get("mode", "unknown")
     model = result.get("model", "unknown")
     prompt = request.get("prompt", "")
+    request_details = result.get("request", {}) if isinstance(result.get("request", {}), dict) else {}
+    effective_prompt = request_details.get("effective_prompt", "")
+    prompt_strategy = request_details.get("prompt_strategy", "unknown")
 
     lines = [
         "# Evaluation",
@@ -59,7 +62,9 @@ def main(argv: list[str]) -> int:
         f"- Request ID: `{request.get('request_id', request_dir.name)}`",
         f"- Mode: {mode}",
         f"- Model: `{model}`",
+        f"- Prompt strategy: {prompt_strategy}",
         f"- Prompt: {prompt}",
+        f"- Effective prompt: {effective_prompt}",
         f"- Local image count: {len(pngs)}",
         f"- Overall status: {'passed' if passed else 'needs_review'}",
         "",

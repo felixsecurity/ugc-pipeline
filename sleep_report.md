@@ -1,32 +1,26 @@
 # Sleep Report
 
 ## Inputs Reviewed
-
 - `all_learnings.md`
 - `brain/README.md`
 - `brain/nano_banana.py`
 - `brain/evaluate_image.py`
-- Learnings from two request summaries:
-  - text-to-image using `fal-ai/nano-banana-2`
-  - image edit using `fal-ai/nano-banana-2/edit`
 
 ## Decision
-
-No brain change needed
+Brain change needed
 
 ## Reasoning
+The learnings say Process B should expand weak client briefs into concrete advertising concepts while preserving explicit constraints. `brain/nano_banana.py` already does this through prompt strategies, advertising-grade effective prompts, product preservation guidance, and learning output.
 
-The aggregated learnings confirm that Process B already selects the expected Nano Banana models for both modes, receives one image from fal, downloads one local image, and records the need for Process C to verify prompt match and disallowed nudity.
-
-`brain/nano_banana.py` already implements those model choices, downloads outputs into the request directory, writes `fal_result.json`, `output_images/`, `learning.md`, and `status.json`.
-
-`brain/evaluate_image.py` already performs structural Process C checks and explicitly leaves prompt match and nudity verification for human visual review, which matches the current learning.
+The learnings also say Process C should verify prompt match and absence of disallowed nudity. `brain/evaluate_image.py` currently performs structural checks and writes human review reminders, but it does not actually inspect generated images for prompt relevance or nudity. That leaves a gap between the recorded learning and current Process C behavior.
 
 ## Proposed Or Applied Changes
+Report-only mode: no files modified.
 
-None. Report-only mode; no files modified.
+Proposed change: enhance Process C so `evaluate_image.py` performs actual image review, or clearly integrates with a required visual review step, for:
+- generated image matches request/effective prompt
+- generated image contains no disallowed nudity
+- any uncertainty escalates to a human operator
 
 ## Follow-Up
-
-- Human operator should visually review generated images for prompt match.
-- Human operator should verify generated or edited images contain no disallowed nudity before publication.
+- Operator should decide whether Process C gets automated visual evaluation now or remains structural-only with mandatory human review.

@@ -24,6 +24,55 @@ RESULT_PATH = "fal_result.json"
 STATUS_PATH = "status.json"
 DOWNLOAD_DIR = "output_images"
 
+PRODUCT_ONLY_TERMS = (
+    "no human",
+    "no humans",
+    "no person",
+    "no people",
+    "without human",
+    "without humans",
+    "without person",
+    "without people",
+    "product only",
+    "product-only",
+    "packshot",
+    "still life",
+    "flat lay",
+    "flatlay",
+)
+
+HUMAN_USAGE_TERMS = (
+    "person",
+    "people",
+    "model",
+    "holding",
+    "hold",
+    "using",
+    "use",
+    "wearing",
+    "wear",
+    "lifestyle",
+    "ugc",
+    "creator",
+    "hand",
+    "hands",
+)
+
+COMMERCIAL_TERMS = (
+    "ad",
+    "advert",
+    "advertising",
+    "campaign",
+    "product",
+    "brand",
+    "ecommerce",
+    "e-commerce",
+    "hero shot",
+    "presentation",
+    "promo",
+    "marketing",
+)
+
 
 def now_utc() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -50,14 +99,74 @@ def load_request(path: Path) -> dict[str, Any]:
         request = json.load(handle)
 
     prompt = str(request.get("prompt", "")).strip()
-    if not prompt:
-        raise ValueError("request.json must include a non-empty prompt")
-
     image_inputs = request.get("image_inputs", [])
     if not isinstance(image_inputs, list):
         raise ValueError("request.json image_inputs must be a list")
+    if not prompt and not image_inputs:
+        raise ValueError("request.json must include a prompt or at least one image input")
 
     return request
+
+
+def contains_any(value: str, terms: tuple[str, ...]) -> bool:
+    return any(term in value for term in terms)
+
+
+def choose_prompt_strategy(prompt: str, image_inputs: list[str]) -> str:
+    normalized = prompt.lower()
+    if contains_any(normalized, PRODUCT_ONLY_TERMS):
+        return "product_only"
+    if contains_any(normalized, HUMAN_USAGE_TERMS):
+        return "human_usage"
+    if image_inputs and len(normalized.split()) <= 18:
+        return "human_usage"
+    if image_inputs and contains_any(normalized, COMMERCIAL_TERMS):
+        return "human_usage"
+    return "general_advertising"
+
+
+def build_effective_prompt(prompt: str, image_inputs: list[str]) -> tuple[str, str]:
+    """Turn weak client input into an advertising-grade generation brief."""
+    original_prompt = prompt.strip()
+    strategy = choose_prompt_strategy(original_prompt, image_inputs)
+    client_intent = original_prompt or "Create a polished commercial presentation image from the supplied product photo."
+
+    base_lines = [
+        "Act as a world-class advertising art director and commercial photographer.",
+        f"Client request: {client_intent}",
+        "Create a polished, photorealistic advertising image suitable for ecommerce, paid social, and brand presentation.",
+        "Preserve the product's core identity, proportions, materials, label text, logo placement, color, and recognizable design from the reference image when provided.",
+        "Use premium lighting, natural shadows, sharp product detail, realistic depth of field, clean composition, and credible scale.",
+        "Avoid distorted packaging, misspelled visible text, extra logos, watermarking, clutter, gimmicky effects, uncanny anatomy, and unrealistic product interaction.",
+    ]
+
+    if strategy == "product_only":
+        base_lines.extend(
+            [
+                "Make this a product-only scene with no human, body parts, face, or mannequin.",
+                "Place the product in aesthetic surroundings that make semantic sense for what it is: choose props, surface, environment, color palette, and lighting that imply the product category, use case, and target buyer.",
+                "Compose it like a premium still-life campaign image, with the product as the unmistakable hero and enough negative space for future ad copy.",
+            ]
+        )
+    elif strategy == "human_usage":
+        base_lines.extend(
+            [
+                "Show a photorealistic adult person naturally using, holding, wearing, or presenting the product in a believable lifestyle advertising scene.",
+                "If the client did not specify demographics, choose an aspirational but broadly relatable adult model and setting that fit the product category.",
+                "Make the product clearly visible, correctly oriented, and heroed in the frame; the person supports the product story without distracting from it.",
+                "Keep pose, grip, gaze, skin texture, clothing, and environment natural, editorial, and brand-safe.",
+            ]
+        )
+    else:
+        base_lines.extend(
+            [
+                "If the request is vague, infer the strongest commercial concept from the product or described subject.",
+                "Prefer a clear hero composition that communicates what the product is, why it is desirable, and where it belongs in a buyer's life.",
+                "Include either a suitable adult lifestyle usage scene or an elevated product still life, whichever best fits the client request.",
+            ]
+        )
+
+    return "\n".join(base_lines), strategy
 
 
 def upload_or_pass_image(fal_client: Any, image_ref: str) -> str:
@@ -102,6 +211,8 @@ def write_learning(
     request: dict[str, Any],
     mode: str,
     model: str,
+    prompt_strategy: str,
+    effective_prompt: str,
     result: dict[str, Any],
     downloads: list[dict[str, str]],
     elapsed_seconds: float,
@@ -117,12 +228,18 @@ def write_learning(
                 f"- Request ID: `{request_id}`",
                 f"- Process B mode: {mode}",
                 f"- Model: `{model}`",
+                f"- Prompt strategy: {prompt_strategy}",
                 f"- Input images: {len(request.get('image_inputs', []))}",
                 f"- Images returned by fal: {image_count}",
                 f"- Images downloaded locally: {len(downloads)}",
                 f"- Output paths: {', '.join(item['path'] for item in downloads) if downloads else 'none'}",
                 f"- Elapsed seconds: {elapsed_seconds:.3f}",
+                "- Process B should expand weak client briefs into a concrete advertising concept while preserving explicit constraints.",
                 "- Process C should verify the generated image matches the prompt and contains no disallowed nudity.",
+                "",
+                "## Effective Prompt",
+                "",
+                effective_prompt,
                 "",
             ]
         ),
@@ -152,8 +269,9 @@ def run(request_path: Path) -> int:
 
     request = load_request(request_path)
     request_id = request.get("request_id", Path.cwd().name)
-    prompt = request["prompt"].strip()
+    original_prompt = str(request.get("prompt", "")).strip()
     image_inputs = [str(item) for item in request.get("image_inputs", []) if str(item).strip()]
+    prompt, prompt_strategy = build_effective_prompt(original_prompt, image_inputs)
 
     arguments: dict[str, Any] = {
         "prompt": prompt,
@@ -182,7 +300,9 @@ def run(request_path: Path) -> int:
         "request_id": request_id,
         "ran_at": now_utc(),
         "request": {
-            "prompt": prompt,
+            "prompt": original_prompt,
+            "effective_prompt": prompt,
+            "prompt_strategy": prompt_strategy,
             "image_input_count": len(image_inputs),
             "num_images": arguments["num_images"],
             "aspect_ratio": arguments["aspect_ratio"],
@@ -197,7 +317,7 @@ def run(request_path: Path) -> int:
     Path(RESULT_PATH).write_text(json.dumps(output, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     Path(RESULT_PATH).chmod(0o600)
     elapsed_seconds = monotonic() - started
-    write_learning(request, mode, model, result, downloads, elapsed_seconds)
+    write_learning(request, mode, model, prompt_strategy, prompt, result, downloads, elapsed_seconds)
     write_status(
         "succeeded",
         "process_b",
@@ -207,6 +327,7 @@ def run(request_path: Path) -> int:
         request_id=request_id,
         mode=mode,
         model=model,
+        prompt_strategy=prompt_strategy,
         output_paths=[item["path"] for item in downloads],
         fal_image_count=len(result.get("images", [])),
     )

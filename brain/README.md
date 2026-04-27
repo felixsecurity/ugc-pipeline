@@ -22,6 +22,9 @@ after cloning or updating the repo to enforce those permissions.
 ## Process B
 
 Process B runs as the requesting Linux user inside that user's private request directory.
+It should behave like an advertising art director, not a literal prompt relay. Many
+clients will provide incomplete direction, so Process B expands weak briefs into a
+concrete commercial image concept before calling the image model.
 
 For this image-generation MVP, Process B is represented by:
 
@@ -29,7 +32,21 @@ For this image-generation MVP, Process B is represented by:
 ./brain/nano_banana.py --request request.json
 ```
 
-The script reads `request.json` from the caller's current working directory, calls fal.ai Nano Banana, and writes all outputs into that same request directory.
+The script reads `request.json` from the caller's current working directory,
+normalizes the prompt into an advertising-grade generation brief, calls fal.ai
+Nano Banana, and writes all outputs into that same request directory.
+
+Process B accepts either:
+
+- A text prompt.
+- One or more product/reference images plus a short prompt.
+- One or more product/reference images with an empty or minimal prompt.
+
+When the client does not know exactly what they want, Process B should infer a
+commercially useful presentation from the available product image and prompt. It
+must preserve explicit client constraints, but otherwise it should make strong
+advertising choices about setting, lighting, framing, product visibility, model
+presence, and buyer context.
 
 Text-only requests use:
 
@@ -43,12 +60,38 @@ Requests with one or more image inputs use:
 fal-ai/nano-banana-2/edit
 ```
 
+Prompt strategy:
+
+- `human_usage`: Used when the prompt asks for people, holding, wearing, usage,
+  lifestyle, UGC, or when a product image is supplied with only a vague brief.
+  The effective prompt asks for a photorealistic adult person naturally using,
+  holding, wearing, or presenting the product in a believable advertising scene.
+- `product_only`: Used when the prompt asks for no people, product-only,
+  packshot, flat lay, or still life. The effective prompt asks for an elevated
+  product scene with no human, body parts, face, or mannequin, using aesthetic
+  surroundings that make semantic sense for the product category.
+- `general_advertising`: Used for clearer text-only or mixed requests that do
+  not force either mode. The effective prompt asks the model to infer the
+  strongest commercial concept while preserving the client's stated direction.
+
+For all strategies, Process B should push toward photorealistic presentation
+quality: premium lighting, natural shadows, sharp product detail, credible scale,
+clean composition, visible product identity, and enough negative space for ad
+copy when appropriate. It should avoid distorted packaging, misspelled visible
+text, extra logos, watermarks, clutter, gimmicky effects, uncanny anatomy, and
+unrealistic product interaction.
+
 Process B writes:
 
 - `fal_result.json`
 - `output_images/`
 - `learning.md`
 - `status.json`
+
+`fal_result.json` records both the original client `prompt` and the generated
+`effective_prompt`, plus the selected `prompt_strategy`. `learning.md` also
+includes the effective prompt so Process C and human operators can evaluate
+whether the advertising interpretation was appropriate.
 
 Because all output paths are based on the caller's directory, the supervisor must set the working directory to the specific request folder before dropping privileges.
 
