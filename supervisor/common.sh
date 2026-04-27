@@ -4,6 +4,8 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CLIENTS_ROOT="${UGC_CLIENTS_ROOT:-/srv/ugc-clients}"
 CODEX_TEMPLATE_ROOT="${UGC_CODEX_TEMPLATE_ROOT:-/etc/ugc-pipeline/codex-template}"
+FAL_ENV_PATH="${UGC_FAL_ENV_PATH:-/etc/ugc-pipeline/fal.env}"
+BRAIN_PYTHON="${UGC_BRAIN_PYTHON:-/opt/ugc-pipeline-venv/bin/python}"
 
 require_root() {
   if [[ "$(id -u)" != "0" ]]; then
@@ -28,6 +30,27 @@ sanitize_request_value() {
     exit 2
   fi
   echo "$raw"
+}
+
+load_fal_key() {
+  if [[ ! -f "$FAL_ENV_PATH" ]]; then
+    echo "Missing FAL API key file: $FAL_ENV_PATH" >&2
+    echo "Create it as root with: install -m 600 -o root -g root /dev/null $FAL_ENV_PATH" >&2
+    echo "Then add: FAL_KEY=your_fal_api_key" >&2
+    exit 1
+  fi
+
+  # shellcheck source=/dev/null
+  source "$FAL_ENV_PATH"
+
+  if [[ -z "${FAL_KEY:-}" && -n "${FALAPIKEY:-}" ]]; then
+    FAL_KEY="$FALAPIKEY"
+  fi
+
+  if [[ -z "${FAL_KEY:-}" ]]; then
+    echo "FAL_KEY is not set in $FAL_ENV_PATH" >&2
+    exit 1
+  fi
 }
 
 client_user_for() {
@@ -108,4 +131,12 @@ run_as_client() {
   local workdir="$2"
   shift 2
   runuser -u "$user" -- bash -lc "cd $(printf '%q' "$workdir") && $*"
+}
+
+run_as_client_with_fal() {
+  local user="$1"
+  local workdir="$2"
+  shift 2
+  load_fal_key
+  runuser -u "$user" -- env FAL_KEY="$FAL_KEY" bash -lc "cd $(printf '%q' "$workdir") && $*"
 }

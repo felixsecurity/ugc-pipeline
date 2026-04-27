@@ -16,5 +16,6 @@ find "$REPO_ROOT/brain" -type f -name '*.py' -exec chmod 755 {} +
 
 chmod 700 "$REPO_ROOT/supervisor"
 find "$REPO_ROOT/supervisor" -type f -name '*.sh' -exec chmod 700 {} +
+find "$REPO_ROOT/supervisor" -type f -name '*.py' -exec chmod 700 {} +
 
 echo "Permissions initialized."

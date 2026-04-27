@@ -23,19 +23,35 @@ after cloning or updating the repo to enforce those permissions.
 
 Process B runs as the requesting Linux user inside that user's private request directory.
 
-For this prototype, Process B is represented by:
+For this image-generation MVP, Process B is represented by:
 
 ```sh
-./brain/get_pokemon.py <pokemon-name>
+./brain/nano_banana.py --request request.json
 ```
 
-The script calls `https://pokeapi.co/`, reads Pokemon data, and writes the result into the caller's current working directory:
+The script reads `request.json` from the caller's current working directory, calls fal.ai Nano Banana, and writes all outputs into that same request directory.
+
+Text-only requests use:
 
 ```text
-poke_return.json
+fal-ai/nano-banana-2
 ```
 
-Because the output path is based on the caller's directory, the supervisor must set the working directory to the specific request folder before dropping privileges.
+Requests with one or more image inputs use:
+
+```text
+fal-ai/nano-banana-2/edit
+```
+
+Process B writes:
+
+- `fal_result.json`
+- `output_images/`
+- `learning.md`
+
+Because all output paths are based on the caller's directory, the supervisor must set the working directory to the specific request folder before dropping privileges.
+
+The fal API key is not stored in the client folder. The supervisor reads it from `/etc/ugc-pipeline/fal.env` and injects it into the dropped Process B environment as `FAL_KEY`.
 
 ## Process C
 
@@ -44,13 +60,18 @@ Process C evaluates the result of Process B and reflects on the request-specific
 For this prototype, Process C should inspect:
 
 - `request.txt`
-- `poke_return.json`
+- `request.json`
+- `request_check.json`
+- `fal_result.json`
+- `output_images/`
 - `learning.md`
 
 It should answer:
 
 - Did Process B satisfy the user request?
 - Was the API response valid and relevant?
+- Did Process A reject obvious nudity before execution?
+- Does the generated or edited image avoid disallowed nudity?
 - Was the output written only inside the user's private request folder?
 - Does `learning.md` contain a useful general observation?
 - Is there anything that should be escalated to a human operator?

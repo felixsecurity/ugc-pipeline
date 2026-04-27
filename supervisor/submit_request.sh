@@ -6,39 +6,76 @@ source "$SCRIPT_DIR/common.sh"
 
 require_root
 
-if [[ "$#" -ne 2 ]]; then
-  echo "usage: submit_request.sh <client-id> <pokemon-name>" >&2
+if [[ "$#" -lt 2 ]]; then
+  echo "usage: submit_request.sh <client-id> <prompt> [image-url-or-file ...]" >&2
   exit 2
 fi
 
 client_id="$(sanitize_client_id "$1")"
-pokemon="$(sanitize_request_value "$2")"
+prompt="$2"
+shift 2
 user="$(client_user_for "$client_id")"
 home_dir="$(client_home_for "$client_id")"
 
+load_fal_key
 ensure_client_user_and_home "$client_id"
 
-request_id="$(date -u +%Y%m%dT%H%M%S%NZ)-$pokemon"
+request_id="$(date -u +%Y%m%dT%H%M%S%NZ)-image"
 request_dir="$home_dir/requests/$request_id"
+inputs_dir="$request_dir/inputs"
 
 install -d -m 700 -o "$user" -g "$user" "$request_dir"
-printf '%s\n' "$pokemon" > "$request_dir/request.txt"
-chown "$user:$user" "$request_dir/request.txt"
-chmod 600 "$request_dir/request.txt"
+install -d -m 700 -o "$user" -g "$user" "$inputs_dir"
 
-brain_script="$REPO_ROOT/brain/get_pokemon.py"
-run_as_client "$user" "$request_dir" "$(printf '%q' "$brain_script") $(printf '%q' "$pokemon")"
+check_report="$request_dir/request_check.json"
+check_args=("--prompt" "$prompt" "--json-output" "$check_report")
+for image_ref in "$@"; do
+  check_args+=("--image" "$image_ref")
+done
+"$REPO_ROOT/supervisor/check_request.py" "${check_args[@]}"
 
-cat > "$request_dir/learning.md" <<EOF
-# Learning
+image_inputs_json="[]"
+copied_inputs=()
+for image_ref in "$@"; do
+  if [[ "$image_ref" =~ ^https?:// ]]; then
+    copied_inputs+=("$image_ref")
+  else
+    file_name="$(basename "$image_ref")"
+    destination="$inputs_dir/$file_name"
+    install -m 600 -o "$user" -g "$user" "$image_ref" "$destination"
+    copied_inputs+=("inputs/$file_name")
+  fi
+done
 
-- Client: $client_id
-- Request: $pokemon
-- Process B wrote \`poke_return.json\` in the request directory.
-- Process C should verify the JSON is relevant to "$pokemon" and decide whether any follow-up is needed.
-EOF
+request_json="$request_dir/request.json"
+python3 - "$request_json" "$prompt" "${copied_inputs[@]}" <<'PY'
+import json
+import sys
+from pathlib import Path
 
-chown "$user:$user" "$request_dir/learning.md"
-chmod 600 "$request_dir/learning.md"
+output_path = Path(sys.argv[1])
+prompt = sys.argv[2]
+image_inputs = sys.argv[3:]
+
+request = {
+    "prompt": prompt,
+    "image_inputs": image_inputs,
+    "num_images": 1,
+    "aspect_ratio": "auto",
+    "output_format": "png",
+    "resolution": "1K",
+    "safety_tolerance": "1",
+    "limit_generations": True,
+}
+
+output_path.write_text(json.dumps(request, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+PY
+
+printf '%s\n' "$prompt" > "$request_dir/request.txt"
+chown "$user:$user" "$request_dir/request.txt" "$request_dir/request.json" "$check_report"
+chmod 600 "$request_dir/request.txt" "$request_dir/request.json" "$check_report"
+
+brain_script="$REPO_ROOT/brain/nano_banana.py"
+run_as_client_with_fal "$user" "$request_dir" "$(printf '%q' "$BRAIN_PYTHON") $(printf '%q' "$brain_script") --request request.json"
 
 echo "$request_dir"
