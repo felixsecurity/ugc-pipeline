@@ -17,27 +17,35 @@ Folder permissions are useful, but they should be treated as a second line of de
 
 ```text
 /srv/ugc-pipeline/
-  clients/
-    client_brutus/
-      requests/
-        request_000005/
-          inputs/
-          work/
-          outputs/
-          script.md
-          prompts.json
-          learning.md
-          human.md
-      client_context/
   brain/
     Brain.md
+  supervisor/
+  all_learnings.md
+
+/srv/ugc-clients/
+  client_brutus/
+    requests/
+      request_000005/
+        inputs/
+        work/
+        outputs/
+        script.md
+        prompts.json
+        learning.md
+        human.md
+    client_context/
   intake/
   quarantine/
+
+/etc/ugc-pipeline/
+  codex-template/
 ```
 
 `intake/` receives new external uploads first. Process A validates and sanitizes files there, then copies accepted inputs into the target client's `requests/.../inputs/` directory.
 
-`brain/Brain.md` should not be mounted into client containers. Process D should read `learning.md` and `human.md` through a scrubber that removes PII and concrete project identifiers before any update to `Brain.md`.
+`/srv/ugc-pipeline` is the git checkout and should contain source-controlled shared process logic and scrubbed aggregate learning. `/srv/ugc-clients` is runtime tenant data and should remain outside git so large media/output files are not accidentally committed.
+
+`brain/Brain.md` should not be writable by client processes. Process D should read `learning.md` and `human.md` through a scrubber that removes PII and concrete project identifiers before any update to repo-tracked aggregate learning.
 
 ## Linux Users and Permissions
 
@@ -51,8 +59,8 @@ useradd --system --no-create-home --gid ugc-client-brutus ugc-client-brutus
 Client directories should be owned by that user/group and inaccessible to others:
 
 ```sh
-chown -R ugc-client-brutus:ugc-client-brutus /srv/ugc-pipeline/clients/client_brutus
-chmod -R u+rwX,g-rwx,o-rwx /srv/ugc-pipeline/clients/client_brutus
+chown -R ugc-client-brutus:ugc-client-brutus /srv/ugc-clients/client_brutus
+chmod -R u+rwX,g-rwx,o-rwx /srv/ugc-clients/client_brutus
 ```
 
 This prevents accidental cross-client reads from host-side scripts. It does not fully contain a compromised process by itself, especially if the process runs as a privileged user, has broad filesystem access, or can reach secrets through environment variables.
@@ -72,7 +80,7 @@ docker run --rm \
   --memory=4g \
   --cpus=2 \
   --network=none \
-  --mount type=bind,src=/srv/ugc-pipeline/clients/client_brutus,dst=/workspace/client \
+  --mount type=bind,src=/srv/ugc-clients/client_brutus,dst=/workspace/client \
   ugc-process-b:latest
 ```
 
@@ -81,8 +89,8 @@ Use `--network=none` for steps that do not need outbound API access. For steps t
 For request-specific work, prefer mounting only the request directory plus a read-only client context directory:
 
 ```sh
---mount type=bind,src=/srv/ugc-pipeline/clients/client_brutus/requests/request_000005,dst=/workspace/request \
---mount type=bind,src=/srv/ugc-pipeline/clients/client_brutus/client_context,dst=/workspace/client_context,readonly
+--mount type=bind,src=/srv/ugc-clients/client_brutus/requests/request_000005,dst=/workspace/request \
+--mount type=bind,src=/srv/ugc-clients/client_brutus/client_context,dst=/workspace/client_context,readonly
 ```
 
 This gives Process B and Process C access to the same client's history/context without exposing other clients.
@@ -150,7 +158,7 @@ Use folder permissions for host-side hygiene. Use containers for the actual exec
 
 The first production-like version should implement:
 
-- `/srv/ugc-pipeline/clients/<client_id>/requests/<request_id>/...`
+- `/srv/ugc-clients/<client_id>/requests/<request_id>/...`
 - One Linux user/group per client.
 - One Process B container image and one Process C container image.
 - Per-run bind mounts limited to that client/request.

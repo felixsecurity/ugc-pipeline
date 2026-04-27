@@ -2,6 +2,8 @@
 
 This folder is the shared, root-controlled process library for the mini UGC pipeline prototype.
 
+The repo is expected to live at `/srv/ugc-pipeline`, so dropped client users can execute these scripts directly from the checkout without traversing `/root`.
+
 Permissions model:
 
 - Owned by `root:root`.

@@ -2,10 +2,8 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-UGC_RUNTIME_ROOT="${UGC_RUNTIME_ROOT:-/srv/ugc-pipeline}"
-CLIENTS_ROOT="$UGC_RUNTIME_ROOT/clients"
-CODEX_TEMPLATE_ROOT="$UGC_RUNTIME_ROOT/codex-template"
-RUNTIME_BRAIN_ROOT="$UGC_RUNTIME_ROOT/brain"
+CLIENTS_ROOT="${UGC_CLIENTS_ROOT:-/srv/ugc-clients}"
+CODEX_TEMPLATE_ROOT="${UGC_CODEX_TEMPLATE_ROOT:-/etc/ugc-pipeline/codex-template}"
 
 require_root() {
   if [[ "$(id -u)" != "0" ]]; then
@@ -43,6 +41,7 @@ client_home_for() {
 }
 
 ensure_codex_template() {
+  install -d -m 700 -o root -g root "$(dirname "$CODEX_TEMPLATE_ROOT")"
   mkdir -p "$CODEX_TEMPLATE_ROOT"
   chmod 700 "$CODEX_TEMPLATE_ROOT"
 
@@ -53,18 +52,6 @@ ensure_codex_template() {
   if [[ -f /root/.codex/config.toml ]]; then
     install -m 600 -o root -g root /root/.codex/config.toml "$CODEX_TEMPLATE_ROOT/config.toml"
   fi
-}
-
-publish_brain() {
-  rm -rf "$RUNTIME_BRAIN_ROOT"
-  install -d -m 755 -o root -g root "$RUNTIME_BRAIN_ROOT"
-
-  cp -a "$REPO_ROOT/brain/." "$RUNTIME_BRAIN_ROOT/"
-  find "$RUNTIME_BRAIN_ROOT" -name '__pycache__' -type d -prune -exec rm -rf {} +
-  chown -R root:root "$RUNTIME_BRAIN_ROOT"
-  find "$RUNTIME_BRAIN_ROOT" -type d -exec chmod 755 {} +
-  find "$RUNTIME_BRAIN_ROOT" -type f -exec chmod 644 {} +
-  find "$RUNTIME_BRAIN_ROOT" -type f -name '*.py' -exec chmod 755 {} +
 }
 
 install_codex_home_for_user() {
@@ -90,14 +77,20 @@ ensure_client_user_and_home() {
   local client_id="$1"
   local user
   local home_dir
+  local current_home
   user="$(client_user_for "$client_id")"
   home_dir="$(client_home_for "$client_id")"
 
   mkdir -p "$CLIENTS_ROOT"
-  chmod 711 "$UGC_RUNTIME_ROOT"
+  chmod 711 "$(dirname "$CLIENTS_ROOT")"
   chmod 711 "$CLIENTS_ROOT"
 
-  if ! id "$user" >/dev/null 2>&1; then
+  if id "$user" >/dev/null 2>&1; then
+    current_home="$(getent passwd "$user" | cut -d: -f6)"
+    if [[ "$current_home" != "$home_dir" ]]; then
+      usermod -d "$home_dir" "$user"
+    fi
+  else
     useradd --system --create-home --home-dir "$home_dir" --shell /usr/sbin/nologin "$user"
   fi
 
@@ -107,7 +100,6 @@ ensure_client_user_and_home() {
   chmod 700 "$home_dir/requests"
 
   ensure_codex_template
-  publish_brain
   install_codex_home_for_user "$user" "$home_dir"
 }
 

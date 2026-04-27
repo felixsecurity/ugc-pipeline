@@ -26,7 +26,7 @@ printf '%s\n' "$pokemon" > "$request_dir/request.txt"
 chown "$user:$user" "$request_dir/request.txt"
 chmod 600 "$request_dir/request.txt"
 
-brain_script="$RUNTIME_BRAIN_ROOT/get_pokemon.py"
+brain_script="$REPO_ROOT/brain/get_pokemon.py"
 run_as_client "$user" "$request_dir" "$(printf '%q' "$brain_script") $(printf '%q' "$pokemon")"
 
 cat > "$request_dir/learning.md" <<EOF

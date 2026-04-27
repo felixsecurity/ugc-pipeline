@@ -6,7 +6,7 @@ source "$SCRIPT_DIR/common.sh"
 
 require_root
 
-output_path="${1:-$UGC_RUNTIME_ROOT/all_learnings.md}"
+output_path="${1:-$REPO_ROOT/all_learnings.md}"
 mkdir -p "$(dirname "$output_path")"
 
 {
@@ -25,5 +25,5 @@ mkdir -p "$(dirname "$output_path")"
   fi
 } > "$output_path"
 
-chmod 600 "$output_path"
+chmod 644 "$output_path"
 echo "$output_path"
