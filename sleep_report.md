@@ -1,25 +1,24 @@
 # Sleep Report
 
 ## Inputs Reviewed
-
 - `all_learnings.md`
-  - Contains only aggregation header and generation timestamp: `2026-04-27T15:10:02Z`
-  - No client feedback or operational learnings present.
 - `brain/README.md`
 - `brain/nano_banana.py`
+- Learnings from aggregated Process B runs:
+  - text-to-image using `fal-ai/nano-banana-2`
+  - image edit using `fal-ai/nano-banana-2/edit`
 
 ## Decision
-
 No brain change needed
 
 ## Reasoning
+The learnings show both Process B modes ran with the expected models, returned one image, and downloaded one image locally. The generated `learning.md` guidance says Process C should verify prompt match and disallowed nudity, which is already aligned with `brain/README.md`.
 
-`all_learnings.md` does not contain any actionable learning, client feedback, bug report, safety issue, or process gap. The current `brain/README.md` and `brain/nano_banana.py` remain consistent with the documented Process B flow: read request JSON, choose text-to-image or edit model, write outputs into the current request directory, and avoid storing secrets in client folders.
+`brain/nano_banana.py` already selects the correct model based on whether image inputs exist, writes `fal_result.json`, downloads images into `output_images/`, and writes the request-level `learning.md`. No new issue or missing requirement appears in `all_learnings.md`.
 
 ## Proposed Or Applied Changes
-
 None. Report-only mode; no files were modified.
 
 ## Follow-Up
-
-- Operator may rerun sleep review after `all_learnings.md` contains substantive learnings from Process C or client runs.
+- Process C should continue verifying image relevance and absence of disallowed nudity for each request.
+- No operator action needed for `brain/` based on the current learnings.
