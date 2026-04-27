@@ -48,6 +48,7 @@ Process B writes:
 - `fal_result.json`
 - `output_images/`
 - `learning.md`
+- `status.json`
 
 Because all output paths are based on the caller's directory, the supervisor must set the working directory to the specific request folder before dropping privileges.
 
@@ -65,6 +66,7 @@ For this prototype, Process C should inspect:
 - `fal_result.json`
 - `output_images/`
 - `learning.md`
+- `status.json`
 
 It should answer:
 
@@ -77,3 +79,11 @@ It should answer:
 - Is there anything that should be escalated to a human operator?
 
 Process C may append to `learning.md`, but it must not modify the shared brain folder.
+
+The MVP Process C implementation is:
+
+```sh
+./brain/evaluate_image.py <request-dir>
+```
+
+It writes `evaluation.md` and performs structural checks: expected files exist, Process A accepted the request, Process B succeeded, and at least one local output image exists. Human visual review is still required for prompt match and nudity verification.

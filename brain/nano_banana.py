@@ -13,6 +13,7 @@ import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
+from time import monotonic
 from typing import Any
 
 
@@ -20,7 +21,23 @@ TEXT_TO_IMAGE_MODEL = "fal-ai/nano-banana-2"
 EDIT_MODEL = "fal-ai/nano-banana-2/edit"
 DEFAULT_REQUEST_PATH = "request.json"
 RESULT_PATH = "fal_result.json"
+STATUS_PATH = "status.json"
 DOWNLOAD_DIR = "output_images"
+
+
+def now_utc() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def write_status(status: str, stage: str, **extra: Any) -> None:
+    payload = {
+        "status": status,
+        "stage": stage,
+        "updated_at": now_utc(),
+        **extra,
+    }
+    Path(STATUS_PATH).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    Path(STATUS_PATH).chmod(0o600)
 
 
 def is_url(value: str) -> bool:
@@ -81,18 +98,30 @@ def download_outputs(result: dict[str, Any]) -> list[dict[str, str]]:
     return downloaded
 
 
-def write_learning(mode: str, model: str, result: dict[str, Any], downloads: list[dict[str, str]]) -> None:
+def write_learning(
+    request: dict[str, Any],
+    mode: str,
+    model: str,
+    result: dict[str, Any],
+    downloads: list[dict[str, str]],
+    elapsed_seconds: float,
+) -> None:
     learning = Path.cwd() / "learning.md"
     image_count = len(result.get("images", []))
+    request_id = request.get("request_id", Path.cwd().name)
     learning.write_text(
         "\n".join(
             [
                 "# Learning",
                 "",
+                f"- Request ID: `{request_id}`",
                 f"- Process B mode: {mode}",
                 f"- Model: `{model}`",
+                f"- Input images: {len(request.get('image_inputs', []))}",
                 f"- Images returned by fal: {image_count}",
                 f"- Images downloaded locally: {len(downloads)}",
+                f"- Output paths: {', '.join(item['path'] for item in downloads) if downloads else 'none'}",
+                f"- Elapsed seconds: {elapsed_seconds:.3f}",
                 "- Process C should verify the generated image matches the prompt and contains no disallowed nudity.",
                 "",
             ]
@@ -103,17 +132,26 @@ def write_learning(mode: str, model: str, result: dict[str, Any], downloads: lis
 
 
 def run(request_path: Path) -> int:
+    started_at = now_utc()
+    started = monotonic()
+    write_status("running", "process_b", started_at=started_at)
+
     if "FAL_KEY" not in os.environ or not os.environ["FAL_KEY"].strip():
-        print("FAL_KEY is not set. Put it in /etc/ugc-pipeline/fal.env for supervisor injection.", file=sys.stderr)
+        message = "FAL_KEY is not set. Put it in /etc/ugc-pipeline/fal.env for supervisor injection."
+        write_status("failed", "process_b", started_at=started_at, error=message)
+        print(message, file=sys.stderr)
         return 1
 
     try:
         import fal_client
     except ImportError:
-        print("fal-client is not installed. Install with: python3 -m pip install fal-client", file=sys.stderr)
+        message = "fal-client is not installed. Install it in /opt/ugc-pipeline-venv."
+        write_status("failed", "process_b", started_at=started_at, error=message)
+        print(message, file=sys.stderr)
         return 1
 
     request = load_request(request_path)
+    request_id = request.get("request_id", Path.cwd().name)
     prompt = request["prompt"].strip()
     image_inputs = [str(item) for item in request.get("image_inputs", []) if str(item).strip()]
 
@@ -141,7 +179,8 @@ def run(request_path: Path) -> int:
     output = {
         "mode": mode,
         "model": model,
-        "ran_at": datetime.now(timezone.utc).isoformat(),
+        "request_id": request_id,
+        "ran_at": now_utc(),
         "request": {
             "prompt": prompt,
             "image_input_count": len(image_inputs),
@@ -157,7 +196,20 @@ def run(request_path: Path) -> int:
 
     Path(RESULT_PATH).write_text(json.dumps(output, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     Path(RESULT_PATH).chmod(0o600)
-    write_learning(mode, model, result, downloads)
+    elapsed_seconds = monotonic() - started
+    write_learning(request, mode, model, result, downloads, elapsed_seconds)
+    write_status(
+        "succeeded",
+        "process_b",
+        started_at=started_at,
+        completed_at=now_utc(),
+        elapsed_seconds=round(elapsed_seconds, 3),
+        request_id=request_id,
+        mode=mode,
+        model=model,
+        output_paths=[item["path"] for item in downloads],
+        fal_image_count=len(result.get("images", [])),
+    )
     print(Path.cwd() / RESULT_PATH)
     return 0
 
@@ -169,7 +221,13 @@ def main(argv: list[str]) -> int:
 
     try:
         return run(Path(args.request))
-    except (ValueError, FileNotFoundError, urllib.error.URLError, TimeoutError) as exc:
+    except Exception as exc:
+        if isinstance(exc, KeyboardInterrupt):
+            raise
+        try:
+            write_status("failed", "process_b", error=str(exc), error_type=type(exc).__name__)
+        except Exception:
+            pass
         print(f"nano_banana failed: {exc}", file=sys.stderr)
         return 1
 

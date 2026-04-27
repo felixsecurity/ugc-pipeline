@@ -1,24 +1,32 @@
 # Sleep Report
 
 ## Inputs Reviewed
+
 - `all_learnings.md`
 - `brain/README.md`
 - `brain/nano_banana.py`
-- Learnings from aggregated Process B runs:
+- `brain/evaluate_image.py`
+- Learnings from two request summaries:
   - text-to-image using `fal-ai/nano-banana-2`
   - image edit using `fal-ai/nano-banana-2/edit`
 
 ## Decision
+
 No brain change needed
 
 ## Reasoning
-The learnings show both Process B modes ran with the expected models, returned one image, and downloaded one image locally. The generated `learning.md` guidance says Process C should verify prompt match and disallowed nudity, which is already aligned with `brain/README.md`.
 
-`brain/nano_banana.py` already selects the correct model based on whether image inputs exist, writes `fal_result.json`, downloads images into `output_images/`, and writes the request-level `learning.md`. No new issue or missing requirement appears in `all_learnings.md`.
+The aggregated learnings confirm that Process B already selects the expected Nano Banana models for both modes, receives one image from fal, downloads one local image, and records the need for Process C to verify prompt match and disallowed nudity.
+
+`brain/nano_banana.py` already implements those model choices, downloads outputs into the request directory, writes `fal_result.json`, `output_images/`, `learning.md`, and `status.json`.
+
+`brain/evaluate_image.py` already performs structural Process C checks and explicitly leaves prompt match and nudity verification for human visual review, which matches the current learning.
 
 ## Proposed Or Applied Changes
-None. Report-only mode; no files were modified.
+
+None. Report-only mode; no files modified.
 
 ## Follow-Up
-- Process C should continue verifying image relevance and absence of disallowed nudity for each request.
-- No operator action needed for `brain/` based on the current learnings.
+
+- Human operator should visually review generated images for prompt match.
+- Human operator should verify generated or edited images contain no disallowed nudity before publication.

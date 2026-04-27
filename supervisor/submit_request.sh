@@ -48,16 +48,20 @@ for image_ref in "$@"; do
 done
 
 request_json="$request_dir/request.json"
-python3 - "$request_json" "$prompt" "${copied_inputs[@]}" <<'PY'
+python3 - "$request_json" "$request_id" "$client_id" "$prompt" "${copied_inputs[@]}" <<'PY'
 import json
 import sys
 from pathlib import Path
 
 output_path = Path(sys.argv[1])
-prompt = sys.argv[2]
-image_inputs = sys.argv[3:]
+request_id = sys.argv[2]
+client_id = sys.argv[3]
+prompt = sys.argv[4]
+image_inputs = sys.argv[5:]
 
 request = {
+    "request_id": request_id,
+    "client_id": client_id,
     "prompt": prompt,
     "image_inputs": image_inputs,
     "num_images": 1,
@@ -72,10 +76,21 @@ output_path.write_text(json.dumps(request, indent=2, sort_keys=True) + "\n", enc
 PY
 
 printf '%s\n' "$prompt" > "$request_dir/request.txt"
-chown "$user:$user" "$request_dir/request.txt" "$request_dir/request.json" "$check_report"
-chmod 600 "$request_dir/request.txt" "$request_dir/request.json" "$check_report"
+cat > "$request_dir/status.json" <<EOF
+{
+  "request_id": "$request_id",
+  "stage": "process_a",
+  "status": "accepted",
+  "updated_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+}
+EOF
+chown "$user:$user" "$request_dir/request.txt" "$request_dir/request.json" "$check_report" "$request_dir/status.json"
+chmod 600 "$request_dir/request.txt" "$request_dir/request.json" "$check_report" "$request_dir/status.json"
 
 brain_script="$REPO_ROOT/brain/nano_banana.py"
 run_as_client_with_fal "$user" "$request_dir" "$(printf '%q' "$BRAIN_PYTHON") $(printf '%q' "$brain_script") --request request.json"
+
+evaluator_script="$REPO_ROOT/brain/evaluate_image.py"
+run_as_client "$user" "$request_dir" "$(printf '%q' "$BRAIN_PYTHON") $(printf '%q' "$evaluator_script") ."
 
 echo "$request_dir"

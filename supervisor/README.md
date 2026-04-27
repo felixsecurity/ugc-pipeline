@@ -18,6 +18,14 @@ This directory should be `700` and owned by `root:root`.
   - Copies local image inputs into the private request folder.
   - Writes `request.json`.
   - Runs Nano Banana Process B as the client user.
+  - Runs basic Process C evaluation as the client user.
+  - Writes `status.json`, `learning.md`, and `evaluation.md` in the request folder.
+
+- `publish_debug_image.sh <request-dir> [label]`
+  - Explicitly publishes selected request outputs to nginx for debugging.
+  - Copies images from `output_images/` into `/var/www/html/debug/ugc/<request-id>/`.
+  - Creates a per-request debug page and refreshes `/var/www/html/debug/ugc/index.html`.
+  - Does not run automatically from Process B; publishing remains a supervisor/debug decision.
 
 - `run_codex_for_client.sh <client-id> <codex-args...>`
   - Runs `codex` with dropped permissions as the client user.
@@ -92,4 +100,16 @@ Example image-edit request with a local file:
 
 ```sh
 /srv/ugc-pipeline/supervisor/submit_request.sh UserA "replace the background with a bright kitchen" /path/to/input.png
+```
+
+Example debug publishing:
+
+```sh
+/srv/ugc-pipeline/supervisor/publish_debug_image.sh /srv/ugc-clients/usera/requests/<request-id> "UserA review"
+```
+
+Then open:
+
+```text
+http://SERVER_IP/debug/ugc/
 ```

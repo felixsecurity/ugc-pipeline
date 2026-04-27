@@ -57,7 +57,7 @@ You are running the root-level sleep process for the ugc-pipeline repository.
 
 Goal:
 - Read all_learnings.md.
-- Inspect brain/README.md and brain/nano_banana.py.
+- Inspect brain/README.md, brain/nano_banana.py, and brain/evaluate_image.py.
 - Decide whether any changes to brain/ are necessary.
 - $apply_instruction
 
