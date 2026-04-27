@@ -25,6 +25,13 @@ This directory should be `700` and owned by `root:root`.
   - Reads all `learning.md` and `learnings.md` files under `/srv/ugc-clients`.
   - Writes an aggregate report, defaulting to `/srv/ugc-pipeline/all_learnings.md` so the aggregate can be version-controlled.
 
+- `sleep_on_learnings.sh [--apply]`
+  - Runs the root-level sleeping process.
+  - Refreshes `all_learnings.md`.
+  - Uses root-level Codex to reason about whether `brain/` should change.
+  - Default mode writes `sleep_report.md` without modifying `brain/`.
+  - `--apply` allows Codex to edit `brain/` if it decides a change is necessary.
+
 ## Important Security Note
 
 This prototype intentionally recycles the root Codex login into each client user's private home. That proves the mechanics, but it means any process running as that client user can read its copied Codex token. For production, prefer a narrow API proxy, scoped service tokens, or one managed service identity per tenant.
