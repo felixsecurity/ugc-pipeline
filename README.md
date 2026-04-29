@@ -13,7 +13,7 @@ Process A
 Process B
 - This is a scoped process it can only act within the container of this one client, it can never "escape"
 - It has access / context to all the requestes from the same client
-- First step is categorizing the request: What was provided? Is this about motion control or generation from scratch?
+- First step is categorizing the request into one of four options: `still_images`, `avatar_voice`, `voice_over`, or the reserved `motion_control` path that requires video input.
 - Then script writing -> script.md
 - Then img prompts, video, audit prompts (in logical order, usually images needed for video)
 - as an example client_Brutus/request_5/prompts.json (a list in order defining prompts, inputs, models for each)

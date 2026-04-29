@@ -34,9 +34,16 @@ This directory should be `700` and owned by `root:root`.
   - Injects `FAL_KEY` and `ELEVENLABS_API_KEY` for ElevenLabs TTS and Kling avatar generation.
   - Writes `script.md`, `output_audio/voiceover.mp3`, `kling_avatar_result.json`, `output_videos/kling_avatar.mp4`, `whisper_timestamps.json`, `output_videos/work/subtitles.ass`, `output_videos/final_subtitled.mp4`, `status.json`, and `learning.md`.
 
+- `submit_voice_over_request.sh <client-id> <request-text-or-file> [character-id]`
+  - Creates the Process B `voice_over` request.
+  - Expected request wording: `Use Astrid. Stage direction: "...". Voiceover: "..."`.
+  - Defaults to character `astrid`.
+  - Injects `FAL_KEY` and `ELEVENLABS_API_KEY` for ElevenLabs TTS, Nano Banana keyframes, and Kling image-to-video generation.
+  - Writes `script.md`, `voice_over_plan.json`, `output_audio/voiceover.mp3`, `output_images/`, `kling_voice_over_result.json`, `output_videos/work/segment_*.mp4`, `output_videos/final_subtitled.mp4`, `whisper_timestamps.json`, `status.json`, `learning.md`, and `evaluation.md`.
+
 - `publish_debug_image.sh <request-dir> [label]`
   - Explicitly publishes selected request outputs to nginx for debugging.
-  - Copies images from `output_images/` and `output_videos/final.mp4` into `/var/www/html/debug/ugc/<request-id>/`.
+  - Copies images from `output_images/` and the best available final MP4 (`output_videos/final_subtitled.mp4` or `output_videos/final.mp4`) into `/var/www/html/debug/ugc/<request-id>/`.
   - Creates a per-request debug page and refreshes `/var/www/html/debug/ugc/index.html`.
   - Does not run automatically from Process B; publishing remains a supervisor/debug decision.
 
@@ -132,6 +139,12 @@ Example Astrid avatar request:
 
 ```sh
 /srv/ugc-pipeline/supervisor/submit_astrid_avatar_request.sh UserA 'Use Astrid and let her say: "Your short UGC script goes here."'
+```
+
+Example voice-over request:
+
+```sh
+/srv/ugc-pipeline/supervisor/submit_voice_over_request.sh UserA 'Use Astrid. Stage direction: Astrid steps into a bright kitchen, holds up the serum, and smiles at camera. Voiceover: "This is the step I never skip before makeup."'
 ```
 
 Example debug publishing:

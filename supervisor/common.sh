@@ -169,9 +169,9 @@ run_as_client_with_fal() {
   shift 2
   load_fal_key
   env_file="$(mktemp)"
+  printf 'export FAL_KEY=%q\n' "$FAL_KEY" > "$env_file"
   chown "$user:$user" "$env_file"
   chmod 600 "$env_file"
-  printf 'export FAL_KEY=%q\n' "$FAL_KEY" > "$env_file"
   runuser -u "$user" -- bash -lc "source $(printf '%q' "$env_file"); rm -f $(printf '%q' "$env_file"); cd $(printf '%q' "$workdir") && $*"
 }
 
@@ -182,9 +182,9 @@ run_as_client_with_elevenlabs() {
   shift 2
   load_elevenlabs_key
   env_file="$(mktemp)"
+  printf 'export ELEVENLABS_API_KEY=%q\n' "$ELEVENLABS_API_KEY" > "$env_file"
   chown "$user:$user" "$env_file"
   chmod 600 "$env_file"
-  printf 'export ELEVENLABS_API_KEY=%q\n' "$ELEVENLABS_API_KEY" > "$env_file"
   runuser -u "$user" -- bash -lc "source $(printf '%q' "$env_file"); rm -f $(printf '%q' "$env_file"); cd $(printf '%q' "$workdir") && $*"
 }
 
@@ -195,11 +195,11 @@ run_as_client_with_media_generation_keys() {
   shift 2
   load_media_generation_keys
   env_file="$(mktemp)"
-  chown "$user:$user" "$env_file"
-  chmod 600 "$env_file"
   {
     printf 'export FAL_KEY=%q\n' "$FAL_KEY"
     printf 'export ELEVENLABS_API_KEY=%q\n' "$ELEVENLABS_API_KEY"
   } > "$env_file"
+  chown "$user:$user" "$env_file"
+  chmod 600 "$env_file"
   runuser -u "$user" -- bash -lc "source $(printf '%q' "$env_file"); rm -f $(printf '%q' "$env_file"); cd $(printf '%q' "$workdir") && $*"
 }

@@ -110,6 +110,15 @@ data = json.load(open(sys.argv[1], encoding="utf-8"))
 print(data.get("model", ""))
 PY
 )"
+  elif [[ -f "$request_dir/kling_voice_over_result.json" ]]; then
+    model="$(python3 - "$request_dir/kling_voice_over_result.json" <<'PY'
+import json
+import sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+models = [data.get("nano_model", ""), data.get("kling_model", "")]
+print(", ".join(model for model in models if model))
+PY
+)"
   fi
 fi
 

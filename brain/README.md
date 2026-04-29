@@ -32,7 +32,17 @@ Process B flavor-specific instructions live in:
 brain/process_b/
 ```
 
-Before running a model, choose the flavor that matches the request shape.
+Before running a model, choose one of the Process B options that matches the
+request shape:
+
+- `still_images`: static product/reference image generation or image editing,
+  followed by a silent local ffmpeg video.
+- `avatar_voice`: a talking character avatar speaks the supplied script.
+- `voice_over`: a character is referenced, the request supplies stage direction
+  plus exact voiceover text, and Process B creates ElevenLabs audio, chained
+  Nano Banana keyframes, Kling image-to-video segments, and baked subtitles.
+- `motion_control`: reserved for later; this option requires video input and is
+  not specified yet.
 
 For this static-image-to-video MVP, Process B is represented by:
 
@@ -50,6 +60,18 @@ The full Astrid scripted avatar flavor is represented by:
 
 ```sh
 ./brain/astrid_avatar.py --request request.json --character-dir /srv/ugc-pipeline/characters/astrid
+```
+
+The voice-over flavor is represented by:
+
+```sh
+./brain/voice_over.py --request request.json --character-dir /srv/ugc-pipeline/characters/astrid
+```
+
+and specified in:
+
+```text
+brain/process_b/voice_over.md
 ```
 
 The script reads `request.json` from the caller's current working directory,
@@ -75,6 +97,17 @@ The Astrid scripted avatar variant accepts a client request shaped like
 that the MP3 is less than 60 seconds, uses Kling AI Avatar v2 Standard to create
 the talking-head video, runs Whisper base for timestamps, and burns social-style
 subtitles into `output_videos/final_subtitled.mp4`.
+
+The voice-over variant accepts a client request that references a character and
+contains both stage direction and exact spoken text. It extracts the spoken text
+to `script.md`, generates `output_audio/voiceover.mp3` with the same ElevenLabs
+Riley voice configuration as the avatar flavor, rounds the measured audio length
+up to the next 5-second mark, then creates `segment_count + 1` chained Nano
+Banana edit keyframes. It uses each adjacent keyframe pair as the start and end
+images for a 5-second `fal-ai/kling-video/v2.6/pro/image-to-video` segment with
+native audio disabled. Finally it concatenates the silent segments, attaches the
+ElevenLabs MP3, runs Whisper base for word timings, and burns subtitles in the
+same social style as the avatar flavor.
 
 When the client does not know exactly what they want, Process B should infer a
 commercially useful presentation from the available product image and prompt. It
