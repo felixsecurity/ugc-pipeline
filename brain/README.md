@@ -26,10 +26,30 @@ It should behave like an advertising art director, not a literal prompt relay. M
 clients will provide incomplete direction, so Process B expands weak briefs into a
 concrete commercial image concept before calling the image model.
 
+Process B flavor-specific instructions live in:
+
+```text
+brain/process_b/
+```
+
+Before running a model, choose the flavor that matches the request shape.
+
 For this static-image-to-video MVP, Process B is represented by:
 
 ```sh
 ./brain/nano_banana.py --request request.json
+```
+
+An alternative scripted voiceover Process B is represented by:
+
+```sh
+./brain/elevenlabs_tts.py --script script.md --character-dir /srv/ugc-pipeline/characters/astrid
+```
+
+The full Astrid scripted avatar flavor is represented by:
+
+```sh
+./brain/astrid_avatar.py --request request.json --character-dir /srv/ugc-pipeline/characters/astrid
 ```
 
 The script reads `request.json` from the caller's current working directory,
@@ -43,6 +63,18 @@ Process B accepts either:
 - A text prompt.
 - One or more product/reference images plus a short prompt.
 - One or more product/reference images with an empty or minimal prompt.
+
+The scripted voiceover variant accepts a script text file and a reusable character
+reference. Character references live under
+`/srv/ugc-pipeline/characters/<character_id>/`; the first character is `astrid`,
+backed by `/srv/ugc-pipeline/characters/astrid/reference.png`.
+
+The Astrid scripted avatar variant accepts a client request shaped like
+`Use Astrid and let her say: "...script..."`. It extracts the script to
+`script.md`, generates `output_audio/voiceover.mp3` with ElevenLabs, validates
+that the MP3 is less than 60 seconds, uses Kling AI Avatar v2 Standard to create
+the talking-head video, runs Whisper base for timestamps, and burns social-style
+subtitles into `output_videos/final_subtitled.mp4`.
 
 When the client does not know exactly what they want, Process B should infer a
 commercially useful presentation from the available product image and prompt. It
@@ -115,7 +147,7 @@ edit were appropriate.
 
 Because all output paths are based on the caller's directory, the supervisor must set the working directory to the specific request folder before dropping privileges.
 
-The fal API key is not stored in the client folder. The supervisor reads it from `/etc/ugc-pipeline/fal.env` and injects it into the dropped Process B environment as `FAL_KEY`.
+Provider API keys are not stored in the client folder. The fal key and ElevenLabs key live in `/etc/ugc-pipeline/fal.env` as `FAL_KEY` and `ELEVENLABS_API_KEY`; the supervisor injects only the credentials required by the dropped Process B environment.
 
 ## Process C
 

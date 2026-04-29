@@ -22,6 +22,18 @@ This directory should be `700` and owned by `root:root`.
   - Runs basic Process C evaluation as the client user.
   - Writes `status.json`, `learning.md`, `output_images/`, `output_videos/final.mp4`, `video_plan.json`, and `evaluation.md` in the request folder.
 
+- `submit_scripted_tts_request.sh <client-id> <script-file> [character-id]`
+  - Creates a scripted Process B request using a reusable character reference.
+  - Defaults to character `astrid`, whose reference image lives at `/srv/ugc-pipeline/characters/astrid/reference.png`.
+  - Runs ElevenLabs text-to-speech as the client user with only `ELEVENLABS_API_KEY` injected.
+  - Writes `script.md`, `request.json`, `elevenlabs_tts_result.json`, `output_audio/voiceover.mp3`, `status.json`, and `learning.md` in the request folder.
+
+- `submit_astrid_avatar_request.sh <client-id> <request-text-or-script-file>`
+  - Creates the full Astrid scripted avatar Process B request.
+  - Expected request wording: `Use Astrid and let her say: "...script..."`.
+  - Injects `FAL_KEY` and `ELEVENLABS_API_KEY` for ElevenLabs TTS and Kling avatar generation.
+  - Writes `script.md`, `output_audio/voiceover.mp3`, `kling_avatar_result.json`, `output_videos/kling_avatar.mp4`, `whisper_timestamps.json`, `output_videos/work/subtitles.ass`, `output_videos/final_subtitled.mp4`, `status.json`, and `learning.md`.
+
 - `publish_debug_image.sh <request-dir> [label]`
   - Explicitly publishes selected request outputs to nginx for debugging.
   - Copies images from `output_images/` and `output_videos/final.mp4` into `/var/www/html/debug/ugc/<request-id>/`.
@@ -53,16 +65,17 @@ The root-owned Codex credential template is stored outside git at:
 /etc/ugc-pipeline/codex-template
 ```
 
-The fal API key is stored outside git at:
+Shared API keys for media generation are stored outside git at:
 
 ```text
 /etc/ugc-pipeline/fal.env
 ```
 
-Use the official fal environment variable name:
+Use the official provider environment variable names:
 
 ```sh
 FAL_KEY=your_fal_api_key
+ELEVENLABS_API_KEY=your_elevenlabs_api_key
 ```
 
 `FALAPIKEY=...` is also accepted as a compatibility alias, but `FAL_KEY` is preferred because that is what the fal client expects.
@@ -72,7 +85,7 @@ Create it as root:
 ```sh
 install -d -m 700 -o root -g root /etc/ugc-pipeline
 install -m 600 -o root -g root /dev/null /etc/ugc-pipeline/fal.env
-printf 'FAL_KEY=%s\n' 'your_fal_api_key' > /etc/ugc-pipeline/fal.env
+printf 'FAL_KEY=%s\nELEVENLABS_API_KEY=%s\n' 'your_fal_api_key' 'your_elevenlabs_api_key' > /etc/ugc-pipeline/fal.env
 ```
 
 Install Python dependencies:
@@ -107,6 +120,18 @@ Example image-edit request with a local file:
 
 ```sh
 /srv/ugc-pipeline/supervisor/submit_request.sh UserA "replace the background with a bright kitchen" /path/to/input.png
+```
+
+Example scripted ElevenLabs request:
+
+```sh
+/srv/ugc-pipeline/supervisor/submit_scripted_tts_request.sh UserA /path/to/script.md astrid
+```
+
+Example Astrid avatar request:
+
+```sh
+/srv/ugc-pipeline/supervisor/submit_astrid_avatar_request.sh UserA 'Use Astrid and let her say: "Your short UGC script goes here."'
 ```
 
 Example debug publishing:

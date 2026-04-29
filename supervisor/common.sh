@@ -53,6 +53,35 @@ load_fal_key() {
   fi
 }
 
+load_elevenlabs_key() {
+  if [[ ! -f "$FAL_ENV_PATH" ]]; then
+    echo "Missing provider API key file: $FAL_ENV_PATH" >&2
+    echo "Create it as root with: install -m 600 -o root -g root /dev/null $FAL_ENV_PATH" >&2
+    echo "Then add: ELEVENLABS_API_KEY=your_elevenlabs_api_key" >&2
+    exit 1
+  fi
+
+  # shellcheck source=/dev/null
+  source "$FAL_ENV_PATH"
+
+  if [[ -z "${ELEVENLABS_API_KEY:-}" ]]; then
+    echo "ELEVENLABS_API_KEY is not set in $FAL_ENV_PATH" >&2
+    exit 1
+  fi
+}
+
+load_media_generation_keys() {
+  load_fal_key
+  if [[ -z "${ELEVENLABS_API_KEY:-}" ]]; then
+    # shellcheck source=/dev/null
+    source "$FAL_ENV_PATH"
+  fi
+  if [[ -z "${ELEVENLABS_API_KEY:-}" ]]; then
+    echo "ELEVENLABS_API_KEY is not set in $FAL_ENV_PATH" >&2
+    exit 1
+  fi
+}
+
 client_user_for() {
   local client_id="$1"
   echo "ugc_${client_id}"
@@ -136,7 +165,41 @@ run_as_client() {
 run_as_client_with_fal() {
   local user="$1"
   local workdir="$2"
+  local env_file
   shift 2
   load_fal_key
-  runuser -u "$user" -- env FAL_KEY="$FAL_KEY" bash -lc "cd $(printf '%q' "$workdir") && $*"
+  env_file="$(mktemp)"
+  chown "$user:$user" "$env_file"
+  chmod 600 "$env_file"
+  printf 'export FAL_KEY=%q\n' "$FAL_KEY" > "$env_file"
+  runuser -u "$user" -- bash -lc "source $(printf '%q' "$env_file"); rm -f $(printf '%q' "$env_file"); cd $(printf '%q' "$workdir") && $*"
+}
+
+run_as_client_with_elevenlabs() {
+  local user="$1"
+  local workdir="$2"
+  local env_file
+  shift 2
+  load_elevenlabs_key
+  env_file="$(mktemp)"
+  chown "$user:$user" "$env_file"
+  chmod 600 "$env_file"
+  printf 'export ELEVENLABS_API_KEY=%q\n' "$ELEVENLABS_API_KEY" > "$env_file"
+  runuser -u "$user" -- bash -lc "source $(printf '%q' "$env_file"); rm -f $(printf '%q' "$env_file"); cd $(printf '%q' "$workdir") && $*"
+}
+
+run_as_client_with_media_generation_keys() {
+  local user="$1"
+  local workdir="$2"
+  local env_file
+  shift 2
+  load_media_generation_keys
+  env_file="$(mktemp)"
+  chown "$user:$user" "$env_file"
+  chmod 600 "$env_file"
+  {
+    printf 'export FAL_KEY=%q\n' "$FAL_KEY"
+    printf 'export ELEVENLABS_API_KEY=%q\n' "$ELEVENLABS_API_KEY"
+  } > "$env_file"
+  runuser -u "$user" -- bash -lc "source $(printf '%q' "$env_file"); rm -f $(printf '%q' "$env_file"); cd $(printf '%q' "$workdir") && $*"
 }

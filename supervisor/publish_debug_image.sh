@@ -19,8 +19,8 @@ if [[ ! -d "$request_dir" ]]; then
   exit 1
 fi
 
-if [[ ! -d "$request_dir/output_images" ]]; then
-  echo "request has no output_images directory: $request_dir" >&2
+if [[ ! -d "$request_dir/output_images" && ! -d "$request_dir/output_videos" ]]; then
+  echo "request has no output_images or output_videos directory: $request_dir" >&2
   exit 1
 fi
 
@@ -30,28 +30,36 @@ publish_dir="$publish_root/$safe_request_id"
 
 install -d -m 755 -o root -g root "$publish_dir"
 
-image_count=0
 image_names=()
-while IFS= read -r image_path; do
-  image_count=$((image_count + 1))
-  extension="${image_path##*.}"
-  if [[ "$extension" == "$image_path" ]]; then
-    extension="png"
-  fi
-  image_name="$(printf '%02d.%s' "$image_count" "$extension")"
-  image_names+=("$image_name")
-  install -m 644 -o root -g root "$image_path" "$publish_dir/$image_name"
-done < <(find "$request_dir/output_images" -maxdepth 1 -type f | sort)
-
-if [[ "$image_count" -eq 0 ]]; then
-  echo "no output images found in: $request_dir/output_images" >&2
-  exit 1
+if [[ -d "$request_dir/output_images" ]]; then
+  image_count=0
+  while IFS= read -r image_path; do
+    image_count=$((image_count + 1))
+    extension="${image_path##*.}"
+    if [[ "$extension" == "$image_path" ]]; then
+      extension="png"
+    fi
+    image_name="$(printf '%02d.%s' "$image_count" "$extension")"
+    image_names+=("$image_name")
+    install -m 644 -o root -g root "$image_path" "$publish_dir/$image_name"
+  done < <(find "$request_dir/output_images" -maxdepth 1 -type f | sort)
 fi
 
 video_name=""
-if [[ -f "$request_dir/output_videos/final.mp4" ]]; then
+video_caption="Final video"
+if [[ -f "$request_dir/output_videos/final_subtitled.mp4" ]]; then
+  video_name="final_subtitled.mp4"
+  video_caption="Final subtitled video"
+  install -m 644 -o root -g root "$request_dir/output_videos/final_subtitled.mp4" "$publish_dir/$video_name"
+elif [[ -f "$request_dir/output_videos/final.mp4" ]]; then
   video_name="final.mp4"
+  video_caption="Silent final video"
   install -m 644 -o root -g root "$request_dir/output_videos/final.mp4" "$publish_dir/$video_name"
+fi
+
+if [[ -z "$video_name" && "${#image_names[@]}" -eq 0 ]]; then
+  echo "no publishable images or final video found in: $request_dir" >&2
+  exit 1
 fi
 
 prompt=""
@@ -79,9 +87,33 @@ data = json.load(open(sys.argv[1], encoding="utf-8"))
 print(data.get("model", ""))
 PY
 )"
+elif [[ -f "$request_dir/request.json" ]]; then
+  prompt="$(python3 - "$request_dir/request.json" <<'PY'
+import json
+import sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+print(data.get("prompt", "") or data.get("script", ""))
+PY
+)"
+  mode="$(python3 - "$request_dir/request.json" <<'PY'
+import json
+import sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+print(data.get("process_b_mode", ""))
+PY
+)"
+  if [[ -f "$request_dir/kling_avatar_result.json" ]]; then
+    model="$(python3 - "$request_dir/kling_avatar_result.json" <<'PY'
+import json
+import sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+print(data.get("model", ""))
+PY
+)"
+  fi
 fi
 
-python3 - "$publish_dir/index.html" "$label" "$safe_request_id" "$prompt" "$mode" "$model" "$video_name" "${image_names[@]}" <<'PY'
+python3 - "$publish_dir/index.html" "$label" "$safe_request_id" "$prompt" "$mode" "$model" "$video_name" "$video_caption" "${image_names[@]}" <<'PY'
 import html
 import sys
 from pathlib import Path
@@ -93,13 +125,14 @@ prompt = sys.argv[4]
 mode = sys.argv[5]
 model = sys.argv[6]
 video_name = sys.argv[7]
-image_names = sys.argv[8:]
+video_caption = sys.argv[8]
+image_names = sys.argv[9:]
 
 figures = []
 if video_name:
     figures.append(
-        f'<figure><video src="{html.escape(video_name)}" controls playsinline muted loop></video>'
-        f'<figcaption>Silent final video</figcaption></figure>'
+        f'<figure><video src="{html.escape(video_name)}" controls playsinline></video>'
+        f'<figcaption>{html.escape(video_caption)}</figcaption></figure>'
     )
 
 for index, name in enumerate(image_names, start=1):
