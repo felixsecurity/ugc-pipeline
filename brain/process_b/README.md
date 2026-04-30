@@ -18,6 +18,14 @@ requests as image generation.
 - Use `motion_control.md` for the `motion_control` option: a video input provides
   the exact movement, a character reference supplies the generated character, and
   optional background/outfit direction may first edit that reference image.
+- Use `total_control.md` for the `total_control` option: a video input provides
+  the source voice, body motion, lip movement, timing, and camera motion; the
+  second frame first seeds a Nano Banana character pose reference, the source
+  voice is converted with ElevenLabs, then the pose reference and dubbed driver
+  video are sent through Kling motion control and subtitled.
+- Use `slide_show.md` for the `slide_show` option: a local folder provides
+  `script.txt` plus numbered images, and Process B creates an ElevenLabs narrated
+  9:16 slideshow with line-timed baked subtitles in the top black band.
 
 If a request includes both a character speaking task and product/image generation,
 split the work into explicit stages and keep each stage's artifacts named in the

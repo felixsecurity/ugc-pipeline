@@ -42,8 +42,17 @@ request shape:
   plus exact voiceover text, and Process B creates ElevenLabs audio, chained
   Nano Banana keyframes, Kling image-to-video segments, and baked subtitles.
 - `motion_control`: a video input provides exact movement, a character reference
-  provides the generated character, optional background/outfit direction may edit
-  that reference image, and Kling motion control keeps the source audio.
+  provides the generated character, Nano Banana first places the character into
+  the second-frame pose/background, and Kling motion control keeps the source
+  audio.
+- `total_control`: a video input provides voice, body movement, lip movement,
+  timing, and camera motion; Nano Banana first places the character into the
+  second-frame pose/background, ElevenLabs converts the source voice to Riley,
+  then Kling motion control uses the pose reference plus dubbed driver video and
+  baked subtitles are generated with Whisper base.
+- `slide_show`: a local folder provides `script.txt` and numbered images; Process
+  B generates Riley narration, derives line timing with Whisper base, pads each
+  image into a 9:16 slideshow, and bakes subtitles into the top black band.
 
 For this static-image-to-video MVP, Process B is represented by:
 
@@ -85,6 +94,30 @@ and specified in:
 
 ```text
 brain/process_b/motion_control.md
+```
+
+The total-control flavor is represented by:
+
+```sh
+./brain/total_control.py --request request.json --character-dir /srv/ugc-pipeline/characters/astrid
+```
+
+and specified in:
+
+```text
+brain/process_b/total_control.md
+```
+
+The slide-show flavor is represented by:
+
+```sh
+./brain/slide_show.py --input-dir /path/to/folder
+```
+
+and specified in:
+
+```text
+brain/process_b/slide_show.md
 ```
 
 The script reads `request.json` from the caller's current working directory,

@@ -28,8 +28,12 @@ LEARNING_PATH = Path("learning.md")
 FINAL_VIDEO_PATH = Path("output_videos") / "final.mp4"
 RAW_VIDEO_PATH = Path("output_videos") / "motion_control.mp4"
 MODIFIED_IMAGE_PATH = Path("output_images") / "motion_control_reference.png"
+UPLOAD_REFERENCE_PATH = Path("output_images") / "motion_control_reference_upload.jpg"
+SECOND_FRAME_PATH = Path("output_images") / "motion_control_frame_02.png"
+DOWNLOADED_VIDEO_PATH = Path("output_videos") / "work" / "motion_control_input.mp4"
 MIN_VIDEO_SECONDS = 3.0
 MAX_VIDEO_SECONDS = 30.05
+MAX_FAL_UPLOAD_BYTES = 10 * 1024 * 1024
 
 
 def now_utc() -> str:
@@ -98,6 +102,14 @@ def probe_video_seconds(path: Path) -> float:
     return float(process.stdout.strip())
 
 
+def download_url(url: str, path: Path) -> Path:
+    path.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
+    with urllib.request.urlopen(url, timeout=300) as response:
+        path.write_bytes(response.read())
+    path.chmod(0o600)
+    return path
+
+
 def has_audio_stream(path: Path) -> bool:
     process = run_command(
         [
@@ -121,7 +133,13 @@ def resolve_video_input(request: dict[str, Any]) -> str:
     if not value:
         raise ValueError("motion_control requests must include video_input")
     if is_url(value):
-        return value
+        path = download_url(value, DOWNLOADED_VIDEO_PATH)
+        duration = probe_video_seconds(path)
+        if duration < MIN_VIDEO_SECONDS or duration > MAX_VIDEO_SECONDS:
+            raise ValueError(
+                f"input video duration must be between {MIN_VIDEO_SECONDS:.0f}s and {MAX_VIDEO_SECONDS:.2f}s for motion_control; got {duration:.3f}s"
+            )
+        return str(path)
     path = Path(value)
     if not path.is_absolute():
         path = Path.cwd() / path
@@ -154,47 +172,131 @@ def extract_first_image_url(result: dict[str, Any]) -> str:
     raise RuntimeError("Nano Banana edit result did not include an image URL")
 
 
-def build_reference_edit_prompt(character_id: str, direction: str) -> str:
+def prepare_reference_for_upload(reference_image: Path) -> Path:
+    if reference_image.stat().st_size <= MAX_FAL_UPLOAD_BYTES:
+        return reference_image
+
+    ffmpeg = resolve_command("ffmpeg")
+    UPLOAD_REFERENCE_PATH.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
+    run_command(
+        [
+            ffmpeg,
+            "-y",
+            "-i",
+            str(reference_image),
+            "-vf",
+            "scale='min(1024,iw)':-2",
+            "-frames:v",
+            "1",
+            "-q:v",
+            "2",
+            str(UPLOAD_REFERENCE_PATH),
+        ]
+    )
+    if UPLOAD_REFERENCE_PATH.stat().st_size > MAX_FAL_UPLOAD_BYTES:
+        run_command(
+            [
+                ffmpeg,
+                "-y",
+                "-i",
+                str(reference_image),
+                "-vf",
+                "scale='min(768,iw)':-2",
+                "-frames:v",
+                "1",
+                "-q:v",
+                "4",
+                str(UPLOAD_REFERENCE_PATH),
+            ]
+        )
+    if UPLOAD_REFERENCE_PATH.stat().st_size > MAX_FAL_UPLOAD_BYTES:
+        raise RuntimeError(f"prepared reference image still exceeds fal upload limit: {UPLOAD_REFERENCE_PATH}")
+    UPLOAD_REFERENCE_PATH.chmod(0o600)
+    return UPLOAD_REFERENCE_PATH
+
+
+def extract_second_frame(video_input: str, output_path: Path = SECOND_FRAME_PATH) -> Path:
+    ffmpeg = resolve_command("ffmpeg")
+    output_path.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
+    run_command(
+        [
+            ffmpeg,
+            "-y",
+            "-i",
+            video_input,
+            "-vf",
+            "select=eq(n\\,1)",
+            "-vsync",
+            "vfr",
+            "-update",
+            "1",
+            "-frames:v",
+            "1",
+            str(output_path),
+        ]
+    )
+    if not output_path.is_file() or output_path.stat().st_size == 0:
+        raise RuntimeError(f"ffmpeg did not extract the second frame to {output_path}")
+    output_path.chmod(0o600)
+    return output_path
+
+
+def build_pose_reference_prompt(character_id: str, direction: str) -> str:
+    background_rule = (
+        f"Apply this requested background or scene change: {direction}"
+        if direction
+        else "Keep the background, camera angle, lighting, framing, and scene layout from the video frame."
+    )
     return "\n".join(
         [
-            "Create one clean photorealistic vertical character reference image for motion transfer.",
-            f"Character: preserve {character_id}'s identity, face, age, hair, body proportions, and recognizable appearance from the input image.",
-            f"Requested background/outfit modification: {direction}",
-            "Apply only the requested background and outfit changes. Keep the character unobstructed with clear full-body or upper-body proportions suitable for video motion control.",
+            "Create one clean photorealistic vertical character reference image for Kling motion control.",
+            "Use the video frame as the pose, composition, body angle, limb placement, camera framing, and scene reference.",
+            f"Replace the person or subject in that video frame with {character_id} from the character reference image.",
+            f"Preserve {character_id}'s identity, face, age, hair, body proportions, and recognizable appearance from the character reference image.",
+            "Copy the pose from the video frame as exactly as possible, including head angle, torso angle, hands, arms, legs, balance, and body silhouette.",
+            background_rule,
+            "Keep the character unobstructed and suitable as the starting image for video motion control.",
             "Do not add captions, subtitles, slogans, UI, title cards, watermarks, logos, stickers, generated text, or extra characters.",
         ]
     )
 
 
-def maybe_edit_reference_image(
+def generate_pose_reference_image(
     fal_client: Any,
     character_dir: Path,
     character_id: str,
     direction: str,
-) -> tuple[str, dict[str, Any] | None, str]:
+    second_frame_path: Path,
+) -> tuple[str, dict[str, Any], str, str, str]:
     reference_image = character_dir / "reference.png"
     if not reference_image.is_file():
         raise FileNotFoundError(f"missing character reference image: {reference_image}")
 
-    source_url = fal_client.upload_file(str(reference_image))
-    if not direction:
-        return source_url, None, str(reference_image)
+    upload_reference = prepare_reference_for_upload(reference_image)
+    reference_url = fal_client.upload_file(str(upload_reference))
+    frame_url = fal_client.upload_file(str(second_frame_path))
 
-    prompt = build_reference_edit_prompt(character_id, direction)
+    prompt = build_pose_reference_prompt(character_id, direction)
     arguments = {
         "prompt": prompt,
-        "image_urls": [source_url],
+        "image_urls": [reference_url, frame_url],
         "num_images": 1,
         "aspect_ratio": "9:16",
         "output_format": "png",
         "safety_tolerance": "1",
-        "resolution": "1K",
+        "resolution": "2K",
         "limit_generations": True,
     }
     result = fal_client.subscribe(NANO_EDIT_MODEL, arguments=arguments, with_logs=True, client_timeout=300)
     image_url = extract_first_image_url(result)
     download_file(image_url, MODIFIED_IMAGE_PATH)
-    return image_url, {"model": NANO_EDIT_MODEL, "arguments": arguments, "result": result, "path": str(MODIFIED_IMAGE_PATH)}, str(MODIFIED_IMAGE_PATH)
+    return (
+        image_url,
+        {"model": NANO_EDIT_MODEL, "arguments": arguments, "result": result, "path": str(MODIFIED_IMAGE_PATH)},
+        str(MODIFIED_IMAGE_PATH),
+        str(upload_reference),
+        frame_url,
+    )
 
 
 def build_motion_prompt(character_id: str, direction: str) -> str:
@@ -248,6 +350,8 @@ def write_learning(
     character_id: str,
     direction: str,
     video_input: str,
+    second_frame_path: Path,
+    upload_reference_path: str,
     reference_path: str,
     final_video_path: Path,
     elapsed_seconds: float,
@@ -259,8 +363,12 @@ def write_learning(
         "- Process B mode: motion_control",
         f"- Character: {character_id}",
         f"- Input video: {video_input}",
-        f"- Reference image used: {reference_path}",
-        f"- Reference image edited with Nano Banana: {'yes' if direction else 'no'}",
+        f"- Pose source frame: {second_frame_path}",
+        f"- Character reference uploaded: {upload_reference_path}",
+        f"- Generated motion reference image: {reference_path}",
+        f"- Pose reference generated with Nano Banana: yes",
+        f"- Nano Banana model: {NANO_EDIT_MODEL}",
+        "- Nano Banana resolution: 2K",
         f"- Motion control model: {KLING_MOTION_CONTROL_MODEL}",
         "- Character orientation: video",
         "- Keep original sound: true",
@@ -292,8 +400,17 @@ def run(request_path: Path, character_dir: Path) -> int:
     direction = str(request.get("direction") or request.get("prompt") or request.get("visual_direction") or "").strip()
     video_input = resolve_video_input(request)
 
-    write_status("running", "reference_image", edit_reference=bool(direction))
-    image_url, nano_edit, reference_path = maybe_edit_reference_image(fal_client, character_dir, character_id, direction)
+    write_status("running", "extract_second_frame")
+    second_frame_path = extract_second_frame(video_input)
+
+    write_status("running", "nano_banana_pose_reference", model=NANO_EDIT_MODEL)
+    image_url, nano_edit, reference_path, upload_reference_path, frame_url = generate_pose_reference_image(
+        fal_client,
+        character_dir,
+        character_id,
+        direction,
+        second_frame_path,
+    )
 
     prompt = build_motion_prompt(character_id, direction)
     write_status("running", "kling_motion_control", model=KLING_MOTION_CONTROL_MODEL)
@@ -304,9 +421,14 @@ def run(request_path: Path, character_dir: Path) -> int:
         "character_id": character_id,
         "direction": direction,
         "video_input": str(request.get("video_input") or request.get("video_url") or request.get("input_video")),
+        "resolved_video_input": video_input,
+        "second_frame_path": str(second_frame_path),
+        "second_frame_url": frame_url,
+        "uploaded_character_reference_path": upload_reference_path,
         "reference_image_path": reference_path,
         "reference_image_url": image_url,
-        "reference_edit_model": NANO_EDIT_MODEL if direction else None,
+        "reference_edit_model": NANO_EDIT_MODEL,
+        "reference_edit_resolution": "2K",
         "motion_control_model": KLING_MOTION_CONTROL_MODEL,
         "character_orientation": "video",
         "keep_original_sound": True,
@@ -327,7 +449,17 @@ def run(request_path: Path, character_dir: Path) -> int:
     )
 
     elapsed_seconds = monotonic() - started
-    write_learning(request, character_id, direction, video_input, reference_path, FINAL_VIDEO_PATH, elapsed_seconds)
+    write_learning(
+        request,
+        character_id,
+        direction,
+        video_input,
+        second_frame_path,
+        upload_reference_path,
+        reference_path,
+        FINAL_VIDEO_PATH,
+        elapsed_seconds,
+    )
     write_status(
         "succeeded",
         "process_b",
@@ -335,8 +467,11 @@ def run(request_path: Path, character_dir: Path) -> int:
         elapsed_seconds=round(elapsed_seconds, 3),
         character_id=character_id,
         input_video=str(request.get("video_input") or request.get("video_url") or request.get("input_video")),
+        resolved_video_input=video_input,
+        second_frame_path=str(second_frame_path),
         reference_image_path=reference_path,
-        reference_edited=bool(direction),
+        uploaded_character_reference_path=upload_reference_path,
+        reference_edited=True,
         plan_path=str(PLAN_PATH),
         result_path=str(RESULT_PATH),
         final_video_path=str(FINAL_VIDEO_PATH),
