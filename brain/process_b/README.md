@@ -15,8 +15,9 @@ requests as image generation.
   request supplies stage direction plus exact voiceover text, and the output is a
   staged visual sequence with ElevenLabs audio, stitched Kling image-to-video
   segments, and baked subtitles.
-- Reserve `motion_control` for requests that provide video input and ask Process B
-  to control or transform motion. This option is not specified yet.
+- Use `motion_control.md` for the `motion_control` option: a video input provides
+  the exact movement, a character reference supplies the generated character, and
+  optional background/outfit direction may first edit that reference image.
 
 If a request includes both a character speaking task and product/image generation,
 split the work into explicit stages and keep each stage's artifacts named in the

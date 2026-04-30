@@ -122,6 +122,87 @@ def evaluate_voice_over(request_dir: Path) -> int:
     return 0 if passed else 1
 
 
+def evaluate_motion_control(request_dir: Path) -> int:
+    checks: list[tuple[str, bool, str]] = []
+
+    request_json = request_dir / "request.json"
+    request_check = request_dir / "request_check.json"
+    result_json = request_dir / "kling_motion_control_result.json"
+    plan_json = request_dir / "motion_control_plan.json"
+    video_dir = request_dir / "output_videos"
+    raw_video = video_dir / "motion_control.mp4"
+    final_video = video_dir / "final.mp4"
+    status_json = request_dir / "status.json"
+    learning_md = request_dir / "learning.md"
+
+    checks.append(("request.json exists", request_json.is_file(), "Process A request payload is present."))
+    checks.append(("request_check.json exists", request_check.is_file(), "Process A safety check report is present."))
+    checks.append(("motion_control_plan.json exists", plan_json.is_file(), "Motion-control plan is present."))
+    checks.append(("kling_motion_control_result.json exists", result_json.is_file(), "Raw provider result is present."))
+    checks.append(("output_videos/ exists", video_dir.is_dir(), "Process B output video directory is present."))
+    checks.append(("motion_control.mp4 exists", raw_video.is_file(), "Downloaded Kling motion-control video is present."))
+    checks.append(("final.mp4 exists", final_video.is_file(), "Final video is present."))
+    checks.append(("status.json exists", status_json.is_file(), "Process B status metadata is present."))
+    checks.append(("learning.md exists", learning_md.is_file(), "Process B learning note is present."))
+
+    request: dict[str, Any] = load_json(request_json) if request_json.is_file() else {}
+    status: dict[str, Any] = load_json(status_json) if status_json.is_file() else {}
+    check_report: dict[str, Any] = load_json(request_check) if request_check.is_file() else {}
+    plan: dict[str, Any] = load_json(plan_json) if plan_json.is_file() else {}
+    result: dict[str, Any] = load_json(result_json) if result_json.is_file() else {}
+
+    checks.append(("Process A accepted request", bool(check_report.get("accepted")), "Request checker accepted the request."))
+    checks.append(("Process B succeeded", status.get("status") == "succeeded", "Process B status is succeeded."))
+    checks.append(("mode is motion_control", status.get("mode") == "motion_control" or request.get("process_b_mode") == "motion_control", "Request/status records motion_control mode."))
+    checks.append(("keep original sound requested", plan.get("keep_original_sound") is True, "Plan asks Kling to keep original sound."))
+    checks.append(("character orientation is video", plan.get("character_orientation") == "video", "Plan uses video orientation to preserve source motion."))
+
+    passed = all(item[1] for item in checks)
+    kling = result.get("kling", {}) if isinstance(result.get("kling", {}), dict) else {}
+    model = kling.get("model") or plan.get("motion_control_model", "unknown")
+
+    lines = [
+        "# Evaluation",
+        "",
+        f"- Evaluated at: {datetime.now(timezone.utc).isoformat()}",
+        f"- Request ID: `{request.get('request_id', request_dir.name)}`",
+        "- Mode: motion_control",
+        f"- Model: `{model}`",
+        f"- Character: {plan.get('character_id', request.get('character_id', 'unknown'))}",
+        f"- Input video: {plan.get('video_input', request.get('video_input', ''))}",
+        f"- Direction: {plan.get('direction', '') or 'none'}",
+        f"- Reference edited: {'yes' if plan.get('reference_edit_model') else 'no'}",
+        f"- Keep original sound: {plan.get('keep_original_sound')}",
+        "- Video path: output_videos/final.mp4",
+        f"- Overall status: {'passed' if passed else 'needs_review'}",
+        "",
+        "## Checks",
+        "",
+    ]
+
+    for name, ok, description in checks:
+        lines.append(f"- {'PASS' if ok else 'FAIL'}: {name} - {description}")
+
+    lines.extend(
+        [
+            "",
+            "## Human Review Notes",
+            "",
+            "- Verify the generated character/background follows the reference image and optional direction.",
+            "- Verify the output motion follows the input video closely.",
+            "- Verify the original audio is present and synchronized acceptably.",
+            "- Verify the video contains no disallowed nudity or unsafe content before publishing.",
+            "",
+        ]
+    )
+
+    output_path = request_dir / EVALUATION_PATH
+    output_path.write_text("\n".join(lines), encoding="utf-8")
+    output_path.chmod(0o600)
+    print(output_path)
+    return 0 if passed else 1
+
+
 def main(argv: list[str]) -> int:
     request_dir = Path(argv[1]) if len(argv) > 1 else Path.cwd()
     checks: list[tuple[str, bool, str]] = []
@@ -138,6 +219,8 @@ def main(argv: list[str]) -> int:
     request: dict[str, Any] = load_json(request_json) if request_json.is_file() else {}
     if request.get("process_b_mode") == "voice_over":
         return evaluate_voice_over(request_dir)
+    if request.get("process_b_mode") == "motion_control":
+        return evaluate_motion_control(request_dir)
 
     checks.append(("request.json exists", request_json.is_file(), "Process A request payload is present."))
     checks.append(("request_check.json exists", request_check.is_file(), "Process A safety check report is present."))

@@ -241,11 +241,34 @@ def build_keyframe_prompt(
         progress = frame_index / (frame_count - 1)
 
     if progress <= 0.05:
-        beat = "opening keyframe, establish the character and setting before the action starts"
+        beat = (
+            "opening keyframe at the start of the action; place the character nearest to the camera, "
+            "not yet deep into the location"
+        )
+        spatial_position = "near foreground / entrance of the described location"
     elif progress >= 0.95:
-        beat = "final keyframe, complete the visual action with a clean stable ending"
+        beat = (
+            "final keyframe at the end of the action; place the character farthest from the camera, "
+            "clearly deeper into the same location"
+        )
+        spatial_position = "deep background / farthest point reached in the same location"
     else:
-        beat = f"intermediate keyframe at {int(round(progress * 100))}% of the action, progress the stage direction naturally"
+        percent = int(round(progress * 100))
+        beat = (
+            f"intermediate keyframe at {percent}% of the action; place the character farther from "
+            "the camera than in the previous keyframe and closer to the destination than the start"
+        )
+        spatial_position = f"about {percent}% of the way from foreground toward the deeper background"
+
+    direction_rules = [
+        "Maintain one continuous forward path through the same environment from keyframe to keyframe.",
+        "The character must never reverse direction, walk backward, teleport, or turn around unless the client explicitly requested it.",
+        "If the client says the character is facing away from camera, keep her back facing the camera in every keyframe.",
+        "Each new keyframe must move the character farther along the route and deeper into the described place than the previous keyframe.",
+        "Use the input image as continuity reference for the same wardrobe, body orientation, lighting, camera height, and environment geometry.",
+        "Do not create new major props, doors, vehicles, walls, machinery, or scene elements that were not already implied by the stage direction or previous keyframe.",
+        "Keep background objects spatially consistent; only reveal more of the existing environment as the character advances.",
+    ]
 
     return "\n".join(
         [
@@ -253,16 +276,25 @@ def build_keyframe_prompt(
             f"Character: preserve {character_id}'s identity, face, age, hair, proportions, and wardrobe continuity from the input image.",
             f"Original stage direction: {stage_direction}",
             f"Keyframe role: {beat}.",
+            f"Spatial position for this keyframe: {spatial_position}.",
+            "Continuity and movement constraints:",
+            *[f"- {rule}" for rule in direction_rules],
             "Use natural commercial lighting, credible body pose, realistic hands, stable anatomy, and a composition suitable for short-form social video.",
-            "Do not add captions, subtitles, slogans, UI, title cards, watermarks, logos, stickers, or generated text.",
+            "Do not add captions, subtitles, slogans, UI, title cards, watermarks, logos, stickers, generated text, or brand logos.",
         ]
     )
 
 
 def build_motion_prompt(stage_direction: str, segment_index: int, segment_count: int) -> str:
+    segment_start = int(round((segment_index / segment_count) * 100))
+    segment_end = int(round(((segment_index + 1) / segment_count) * 100))
     return (
         f"Five-second photorealistic UGC motion segment {segment_index + 1} of {segment_count}. "
+        f"This segment covers the continuous movement from about {segment_start}% to {segment_end}% of the route. "
         f"Animate only the visual action implied by this stage direction: {stage_direction}. "
+        "Move the character forward along the same path from the supplied start frame to the supplied end frame. "
+        "Do not let the character turn around, face the camera, reverse direction, walk backward, or slide unnaturally. "
+        "Do not invent new large props, doors, vehicles, walls, or machinery during the transition; preserve the same environment geometry. "
         "Keep character identity, clothing, lighting, and setting continuous between the supplied start and end frames. "
         "Use natural camera movement and realistic body motion. No captions, no text overlays, no logos, no watermarks."
     )
@@ -335,7 +367,8 @@ def run_kling_segments(
             "prompt": prompt,
             "negative_prompt": (
                 "blur, distortion, low quality, identity drift, face drift, warped hands, bad anatomy, "
-                "text overlays, captions, subtitles, logos, watermarks"
+                "turning around, walking backward, reversing direction, teleporting, sliding, inconsistent environment, "
+                "new doors, new vehicles, new walls, new large props, text overlays, captions, subtitles, logos, watermarks"
             ),
             "start_image_url": frames[index]["image_url"],
             "end_image_url": frames[index + 1]["image_url"],

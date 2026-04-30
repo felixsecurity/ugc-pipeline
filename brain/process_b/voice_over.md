@@ -82,6 +82,17 @@ Rules:
   continuous.
 - Derive each image prompt from the original client stage direction. Do not
   drift into unrelated action.
+- Treat the image chain as one continuous route through one coherent physical
+  space. Each keyframe must put the character farther along the route than the
+  previous keyframe, not back at the start or moving in a contradictory
+  direction.
+- Preserve the client's stated body orientation. If the client says the
+  character is facing away from camera, every keyframe and segment should keep
+  the character facing away unless the request explicitly asks for a turn.
+- Do not invent new large scene elements between keyframes. Doors, vehicles,
+  walls, machinery, props, and background geometry should remain consistent and
+  should only appear when implied by the original stage direction or already
+  present in the previous keyframe.
 - Prompt each image as a clean photorealistic video keyframe with no captions,
   slogans, UI, subtitles, watermarks, or added text.
 - Preserve the named character's appearance from the reference image.
@@ -111,7 +122,9 @@ Use:
 - `prompt`: concise motion direction for only that 5s segment, extracted from
   the original stage direction and the neighboring keyframes
 - `negative_prompt`: include blur, distortion, low quality, identity drift,
-  warped hands, bad anatomy, text overlays, captions, logos, and watermarks
+  warped hands, bad anatomy, turning around, reversing direction, walking
+  backward, teleporting, inconsistent environment, newly invented large objects,
+  text overlays, captions, logos, and watermarks
 
 The end frame of each clip is the start frame of the next clip by construction:
 

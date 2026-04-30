@@ -41,8 +41,9 @@ request shape:
 - `voice_over`: a character is referenced, the request supplies stage direction
   plus exact voiceover text, and Process B creates ElevenLabs audio, chained
   Nano Banana keyframes, Kling image-to-video segments, and baked subtitles.
-- `motion_control`: reserved for later; this option requires video input and is
-  not specified yet.
+- `motion_control`: a video input provides exact movement, a character reference
+  provides the generated character, optional background/outfit direction may edit
+  that reference image, and Kling motion control keeps the source audio.
 
 For this static-image-to-video MVP, Process B is represented by:
 
@@ -72,6 +73,18 @@ and specified in:
 
 ```text
 brain/process_b/voice_over.md
+```
+
+The motion-control flavor is represented by:
+
+```sh
+./brain/motion_control.py --request request.json --character-dir /srv/ugc-pipeline/characters/astrid
+```
+
+and specified in:
+
+```text
+brain/process_b/motion_control.md
 ```
 
 The script reads `request.json` from the caller's current working directory,
@@ -108,6 +121,14 @@ images for a 5-second `fal-ai/kling-video/v2.6/pro/image-to-video` segment with
 native audio disabled. Finally it concatenates the silent segments, attaches the
 ElevenLabs MP3, runs Whisper base for word timings, and burns subtitles in the
 same social style as the avatar flavor.
+
+The motion-control variant accepts a character reference and input video. When
+the request includes background or outfit direction, it first edits the character
+reference image with `fal-ai/nano-banana-2/edit`; otherwise it uses the original
+reference image. It then calls
+`fal-ai/kling-video/v2.6/standard/motion-control` with `character_orientation:
+"video"` and `keep_original_sound: true`, asking the model to preserve the exact
+movements of the input video while using the character/background from the image.
 
 When the client does not know exactly what they want, Process B should infer a
 commercially useful presentation from the available product image and prompt. It

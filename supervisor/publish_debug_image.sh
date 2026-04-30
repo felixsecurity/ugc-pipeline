@@ -119,6 +119,15 @@ models = [data.get("nano_model", ""), data.get("kling_model", "")]
 print(", ".join(model for model in models if model))
 PY
 )"
+  elif [[ -f "$request_dir/kling_motion_control_result.json" ]]; then
+    model="$(python3 - "$request_dir/kling_motion_control_result.json" <<'PY'
+import json
+import sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+kling = data.get("kling", {})
+print(kling.get("model", ""))
+PY
+)"
   fi
 fi
 

@@ -41,6 +41,14 @@ This directory should be `700` and owned by `root:root`.
   - Injects `FAL_KEY` and `ELEVENLABS_API_KEY` for ElevenLabs TTS, Nano Banana keyframes, and Kling image-to-video generation.
   - Writes `script.md`, `voice_over_plan.json`, `output_audio/voiceover.mp3`, `output_images/`, `kling_voice_over_result.json`, `output_videos/work/segment_*.mp4`, `output_videos/final_subtitled.mp4`, `whisper_timestamps.json`, `status.json`, `learning.md`, and `evaluation.md`.
 
+- `submit_motion_control_request.sh <client-id> <video-url-or-file> [direction-text-or-file] [character-id]`
+  - Creates the Process B `motion_control` request.
+  - Defaults to character `astrid`.
+  - Copies a local input video into the private request folder or accepts a video URL.
+  - If direction is supplied, edits the character reference image with Nano Banana before calling Kling.
+  - Injects `FAL_KEY` for Nano Banana reference editing and Kling motion control.
+  - Writes `motion_control_plan.json`, `kling_motion_control_result.json`, optional `output_images/motion_control_reference.png`, `output_videos/motion_control.mp4`, `output_videos/final.mp4`, `status.json`, `learning.md`, and `evaluation.md`.
+
 - `publish_debug_image.sh <request-dir> [label]`
   - Explicitly publishes selected request outputs to nginx for debugging.
   - Copies images from `output_images/` and the best available final MP4 (`output_videos/final_subtitled.mp4` or `output_videos/final.mp4`) into `/var/www/html/debug/ugc/<request-id>/`.
@@ -145,6 +153,12 @@ Example voice-over request:
 
 ```sh
 /srv/ugc-pipeline/supervisor/submit_voice_over_request.sh UserA 'Use Astrid. Stage direction: Astrid steps into a bright kitchen, holds up the serum, and smiles at camera. Voiceover: "This is the step I never skip before makeup."'
+```
+
+Example motion-control request:
+
+```sh
+/srv/ugc-pipeline/supervisor/submit_motion_control_request.sh UserA /path/to/input.mp4 'Put Astrid in a clean automotive factory outfit and background' astrid
 ```
 
 Example debug publishing:
