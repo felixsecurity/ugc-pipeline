@@ -49,13 +49,18 @@ Generate `output_audio/voiceover.mp3` with the same ElevenLabs configuration as
 `avatar_voice`:
 
 - model: `eleven_multilingual_v2`
-- voice: Riley
-- voice ID: `hA4zGnmTwX2NQiTRMt7o`
+- default voice: Riley
+- additional registered voice: Alex
+- default voice ID: `hA4zGnmTwX2NQiTRMt7o`
+- Alex voice ID: `uf0ZrRtyyJlbbGIn43uD`
 - speed: `0.92`
 - stability: `0.78`
 - similarity boost: `0.85`
 - style exaggeration: `0.23`
 - format: `mp3_44100_128`
+
+The voice helper accepts either `voice_name` or `voice_id` in the request and
+applies the same settings to both registered voices.
 
 Prevalidate the MP3 with `ffprobe`. Let the measured audio duration determine
 the video duration:

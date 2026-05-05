@@ -140,20 +140,22 @@ backed by `/srv/ugc-pipeline/characters/astrid/reference.png`.
 The Astrid scripted avatar variant accepts a client request shaped like
 `Use Astrid and let her say: "...script..."`. It extracts the script to
 `script.md`, generates `output_audio/voiceover.mp3` with ElevenLabs, validates
-that the MP3 is less than 60 seconds, uses Kling AI Avatar v2 Standard to create
-the talking-head video, runs Whisper base for timestamps, and burns social-style
-subtitles into `output_videos/final_subtitled.mp4`.
+that the MP3 is less than 60 seconds, optionally uses Nano Banana edit to apply a
+requested background to Astrid's reference image, uses Kling AI Avatar v2
+Standard to create the talking-head video, runs Whisper base for timestamps, and
+burns social-style subtitles into `output_videos/final_subtitled.mp4`.
 
 The voice-over variant accepts a client request that references a character and
 contains both stage direction and exact spoken text. It extracts the spoken text
 to `script.md`, generates `output_audio/voiceover.mp3` with the same ElevenLabs
-Riley voice configuration as the avatar flavor, rounds the measured audio length
-up to the next 5-second mark, then creates `segment_count + 1` chained Nano
-Banana edit keyframes. It uses each adjacent keyframe pair as the start and end
-images for a 5-second `fal-ai/kling-video/v2.6/pro/image-to-video` segment with
-native audio disabled. Finally it concatenates the silent segments, attaches the
-ElevenLabs MP3, runs Whisper base for word timings, and burns subtitles in the
-same social style as the avatar flavor.
+voice settings as the avatar flavor, rounds the measured audio length up to the
+next 5-second mark, then creates `segment_count + 1` chained Nano Banana edit
+keyframes. It uses each adjacent keyframe pair as the start and end images for a
+5-second `fal-ai/kling-video/v2.6/pro/image-to-video` segment with native audio
+disabled. Finally it concatenates the silent segments, attaches the ElevenLabs
+MP3, runs Whisper base for word timings, and burns subtitles in the same social
+style as the avatar flavor. The registered ElevenLabs voices are Riley and Alex
+with identical settings; requests can select either by voice name or voice ID.
 
 The motion-control variant accepts a character reference and input video. When
 the request includes background or outfit direction, it first edits the character

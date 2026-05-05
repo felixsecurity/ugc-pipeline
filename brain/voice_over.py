@@ -658,13 +658,14 @@ def run(request_path: Path, character_dir: Path) -> int:
     voiceover_text = extract_voiceover_text(request, prompt)
     stage_direction = extract_stage_direction(request, prompt, voiceover_text)
     character_id = resolve_character_id(request, prompt, character_dir)
+    voice_profile = elevenlabs_tts.resolve_voice_profile(request.get("voice_name") or request.get("voice_id"))
     script_path = save_script(voiceover_text)
 
     write_status("running", "elevenlabs_tts", script_path=str(script_path))
     api_key = os.environ.get("ELEVENLABS_API_KEY", "").strip()
     if not api_key:
         raise RuntimeError("ELEVENLABS_API_KEY is not set. Put it in /etc/ugc-pipeline/fal.env for supervisor injection.")
-    elevenlabs_tts.synthesize_speech(api_key, voiceover_text, AUDIO_PATH)
+    elevenlabs_tts.synthesize_speech(api_key, voiceover_text, AUDIO_PATH, voice_id=voice_profile["voice_id"])
 
     write_status("running", "audio_prevalidation", audio_path=str(AUDIO_PATH))
     audio_duration = probe_audio_seconds(AUDIO_PATH)
@@ -698,6 +699,8 @@ def run(request_path: Path, character_dir: Path) -> int:
     plan = {
         "mode": "voice_over",
         "character_id": character_id,
+        "voice_name": voice_profile["voice_name"],
+        "voice_id": voice_profile["voice_id"],
         "stage_direction": stage_direction,
         "script_path": str(SCRIPT_PATH),
         "audio_path": str(AUDIO_PATH),
@@ -745,6 +748,8 @@ def run(request_path: Path, character_dir: Path) -> int:
         mode="voice_over",
         elapsed_seconds=round(elapsed_seconds, 3),
         character_id=character_id,
+        voice_name=voice_profile["voice_name"],
+        voice_id=voice_profile["voice_id"],
         script_path=str(script_path),
         audio_path=str(AUDIO_PATH),
         audio_duration_seconds=round(audio_duration, 3),

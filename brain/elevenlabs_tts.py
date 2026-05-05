@@ -23,8 +23,6 @@ RESULT_PATH = Path("elevenlabs_tts_result.json")
 STATUS_PATH = Path("status.json")
 LEARNING_PATH = Path("learning.md")
 
-VOICE_NAME = "Riley"
-VOICE_ID = "hA4zGnmTwX2NQiTRMt7o"
 MODEL_ID = "eleven_multilingual_v2"
 OUTPUT_FORMAT = "mp3_44100_128"
 VOICE_SETTINGS = {
@@ -34,6 +32,32 @@ VOICE_SETTINGS = {
     "style": 0.23,
     "use_speaker_boost": True,
 }
+VOICE_PROFILES = {
+    "riley": {
+        "voice_name": "Riley",
+        "voice_id": "hA4zGnmTwX2NQiTRMt7o",
+    },
+    "alex": {
+        "voice_name": "Alex",
+        "voice_id": "uf0ZrRtyyJlbbGIn43uD",
+    },
+}
+DEFAULT_VOICE_KEY = "riley"
+VOICE_NAME = VOICE_PROFILES[DEFAULT_VOICE_KEY]["voice_name"]
+VOICE_ID = VOICE_PROFILES[DEFAULT_VOICE_KEY]["voice_id"]
+
+
+def resolve_voice_profile(selector: str | None = None) -> dict[str, str]:
+    if not selector:
+        return VOICE_PROFILES[DEFAULT_VOICE_KEY]
+    normalized = selector.strip().lower()
+    if normalized in VOICE_PROFILES:
+        return VOICE_PROFILES[normalized]
+    for profile in VOICE_PROFILES.values():
+        if normalized == profile["voice_name"].lower() or normalized == profile["voice_id"].lower():
+            return profile
+    available = ", ".join(sorted(profile["voice_name"] for profile in VOICE_PROFILES.values()))
+    raise ValueError(f"unknown ElevenLabs voice '{selector}'. Available voices: {available}")
 
 
 def now_utc() -> str:
@@ -86,18 +110,25 @@ def load_character(character_dir: Path) -> dict[str, Any]:
     return metadata
 
 
-def elevenlabs_payload(text: str) -> dict[str, Any]:
+def elevenlabs_payload(text: str, model_id: str = MODEL_ID, voice_settings: dict[str, Any] = VOICE_SETTINGS) -> dict[str, Any]:
     return {
         "text": text,
-        "model_id": MODEL_ID,
-        "voice_settings": VOICE_SETTINGS,
+        "model_id": model_id,
+        "voice_settings": voice_settings,
     }
 
 
-def synthesize_speech(api_key: str, text: str, output_path: Path) -> dict[str, Any]:
+def synthesize_speech(
+    api_key: str,
+    text: str,
+    output_path: Path,
+    voice_id: str = VOICE_ID,
+    voice_settings: dict[str, Any] = VOICE_SETTINGS,
+    model_id: str = MODEL_ID,
+) -> dict[str, Any]:
     query = urllib.parse.urlencode({"output_format": OUTPUT_FORMAT})
-    url = f"{API_BASE_URL}/text-to-speech/{VOICE_ID}?{query}"
-    body = json.dumps(elevenlabs_payload(text)).encode("utf-8")
+    url = f"{API_BASE_URL}/text-to-speech/{voice_id}?{query}"
+    body = json.dumps(elevenlabs_payload(text, model_id=model_id, voice_settings=voice_settings)).encode("utf-8")
     request = urllib.request.Request(
         url,
         data=body,
@@ -132,6 +163,10 @@ def synthesize_speech(api_key: str, text: str, output_path: Path) -> dict[str, A
         "content_type": content_type,
         "request_id": request_id,
         "bytes_written": len(audio),
+        "voice_id": voice_id,
+        "voice_name": resolve_voice_profile(voice_id)["voice_name"],
+        "model_id": model_id,
+        "output_format": OUTPUT_FORMAT,
     }
 
 
@@ -159,6 +194,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--script", type=Path, help="Script text file. Defaults to script.md, then script.txt.")
     parser.add_argument("--character-dir", type=Path, default=DEFAULT_CHARACTER_DIR, help="Character folder containing character.json and reference.png.")
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT_PATH, help="Output MP3 path.")
+    parser.add_argument("--voice-name", help="Registered ElevenLabs voice name, for example Riley or Alex.")
+    parser.add_argument("--voice-id", help="Explicit ElevenLabs voice ID. Takes precedence over --voice-name.")
     parser.add_argument("--dry-run", action="store_true", help="Write metadata without calling the ElevenLabs API.")
     return parser.parse_args()
 
@@ -169,6 +206,8 @@ def main() -> int:
         script_path = args.script or find_default_script()
         script_text = read_script(script_path)
         character = load_character(args.character_dir)
+        selector = args.voice_id or args.voice_name
+        voice_profile = resolve_voice_profile(selector)
         write_status("running", "elevenlabs_tts", character=character.get("character_id"), script=str(script_path))
 
         api_result: dict[str, Any] | None = None
@@ -176,7 +215,7 @@ def main() -> int:
             api_key = os.environ.get("ELEVENLABS_API_KEY", "").strip()
             if not api_key:
                 raise RuntimeError("ELEVENLABS_API_KEY is not set. Put it in /etc/ugc-pipeline/fal.env for supervisor injection.")
-            api_result = synthesize_speech(api_key, script_text, args.output)
+            api_result = synthesize_speech(api_key, script_text, args.output, voice_id=voice_profile["voice_id"], voice_settings=VOICE_SETTINGS)
 
         result = {
             "status": "dry_run" if args.dry_run else "succeeded",
@@ -185,8 +224,8 @@ def main() -> int:
             "character": character,
             "script_path": str(script_path),
             "script_characters": len(script_text),
-            "voice_name": VOICE_NAME,
-            "voice_id": VOICE_ID,
+            "voice_name": voice_profile["voice_name"],
+            "voice_id": voice_profile["voice_id"],
             "model_id": MODEL_ID,
             "voice_settings": VOICE_SETTINGS,
             "output_format": OUTPUT_FORMAT,

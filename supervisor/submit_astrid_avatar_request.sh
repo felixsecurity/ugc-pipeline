@@ -50,7 +50,7 @@ request = {
     "process_b_mode": "astrid_scripted_avatar",
     "character_id": sys.argv[5],
     "character_dir": sys.argv[6],
-    "expected_request_shape": 'Use Astrid and let her say: "...script..."',
+    "expected_request_shape": 'Use Astrid and let her say: "...script...". Optional: change her background to "...".',
 }
 output_path.write_text(json.dumps(request, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 PY

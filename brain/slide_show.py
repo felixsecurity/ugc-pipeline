@@ -166,11 +166,11 @@ def save_script(lines: list[str]) -> Path:
     return SCRIPT_COPY_PATH
 
 
-def synthesize_audio(lines: list[str]) -> dict[str, Any]:
+def synthesize_audio(lines: list[str], voice_profile: dict[str, str]) -> dict[str, Any]:
     if AUDIO_PATH.is_file() and AUDIO_PATH.stat().st_size > 0:
         return {
-            "voice_name": elevenlabs_tts.VOICE_NAME,
-            "voice_id": elevenlabs_tts.VOICE_ID,
+            "voice_name": voice_profile["voice_name"],
+            "voice_id": voice_profile["voice_id"],
             "model_id": elevenlabs_tts.MODEL_ID,
             "output_format": elevenlabs_tts.OUTPUT_FORMAT,
             "api_result": None,
@@ -181,10 +181,10 @@ def synthesize_audio(lines: list[str]) -> dict[str, Any]:
     if not api_key:
         raise RuntimeError("ELEVENLABS_API_KEY is not set. Put it in /etc/ugc-pipeline/fal.env for supervisor injection.")
     text = "\n".join(lines)
-    result = elevenlabs_tts.synthesize_speech(api_key, text, AUDIO_PATH)
+    result = elevenlabs_tts.synthesize_speech(api_key, text, AUDIO_PATH, voice_id=voice_profile["voice_id"])
     return {
-        "voice_name": elevenlabs_tts.VOICE_NAME,
-        "voice_id": elevenlabs_tts.VOICE_ID,
+        "voice_name": voice_profile["voice_name"],
+        "voice_id": voice_profile["voice_id"],
         "model_id": elevenlabs_tts.MODEL_ID,
         "output_format": elevenlabs_tts.OUTPUT_FORMAT,
         "api_result": result,
@@ -557,7 +557,14 @@ def concat_and_burn(segments: list[dict[str, Any]], audio_path: Path, subtitles_
     return output_path
 
 
-def write_learning(input_dir: Path, script_path: Path, line_count: int, final_video_path: Path, elapsed_seconds: float) -> None:
+def write_learning(
+    input_dir: Path,
+    script_path: Path,
+    line_count: int,
+    voice_profile: dict[str, str],
+    final_video_path: Path,
+    elapsed_seconds: float,
+) -> None:
     lines = [
         "# Learning",
         "",
@@ -565,7 +572,7 @@ def write_learning(input_dir: Path, script_path: Path, line_count: int, final_vi
         f"- Input folder: {input_dir}",
         f"- Script path: {script_path}",
         f"- Slide count: {line_count}",
-        f"- Voice: {elevenlabs_tts.VOICE_NAME} ({elevenlabs_tts.VOICE_ID})",
+        f"- Voice: {voice_profile['voice_name']} ({voice_profile['voice_id']})",
         f"- TTS model: {elevenlabs_tts.MODEL_ID}",
         "- Whisper model: base",
         f"- Final subtitled video: {final_video_path}",
@@ -577,7 +584,7 @@ def write_learning(input_dir: Path, script_path: Path, line_count: int, final_vi
     LEARNING_PATH.chmod(0o600)
 
 
-def run(input_dir: Path) -> int:
+def run(input_dir: Path, voice_profile: dict[str, str]) -> int:
     started = monotonic()
     input_dir = input_dir.resolve()
     write_status("running", "slide_show_setup", input_dir=str(input_dir))
@@ -586,7 +593,7 @@ def run(input_dir: Path) -> int:
     local_script_path = save_script(lines)
 
     write_status("running", "elevenlabs_tts", line_count=len(lines))
-    tts_result = synthesize_audio(lines)
+    tts_result = synthesize_audio(lines, voice_profile)
     audio_duration = probe_audio_seconds(AUDIO_PATH)
 
     write_status("running", "whisper_timestamps", model="base")
@@ -619,7 +626,7 @@ def run(input_dir: Path) -> int:
     write_json(PLAN_PATH, plan)
 
     elapsed_seconds = monotonic() - started
-    write_learning(input_dir, script_path, len(lines), final_video_path, elapsed_seconds)
+    write_learning(input_dir, script_path, len(lines), voice_profile, final_video_path, elapsed_seconds)
     write_status(
         "succeeded",
         "process_b",
@@ -641,9 +648,12 @@ def run(input_dir: Path) -> int:
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input-dir", type=Path, default=DEFAULT_INPUT_DIR, help="Folder containing script.txt and numbered images.")
+    parser.add_argument("--voice-name", help="Registered ElevenLabs voice name, for example Riley or Alex.")
+    parser.add_argument("--voice-id", help="Explicit ElevenLabs voice ID. Takes precedence over --voice-name.")
     args = parser.parse_args(argv[1:])
     try:
-        return run(args.input_dir)
+        voice_profile = elevenlabs_tts.resolve_voice_profile(args.voice_id or args.voice_name)
+        return run(args.input_dir, voice_profile)
     except Exception as exc:
         if isinstance(exc, KeyboardInterrupt):
             raise

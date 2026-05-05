@@ -31,8 +31,9 @@ This directory should be `700` and owned by `root:root`.
 - `submit_astrid_avatar_request.sh <client-id> <request-text-or-script-file>`
   - Creates the full Astrid scripted avatar Process B request.
   - Expected request wording: `Use Astrid and let her say: "...script..."`.
-  - Injects `FAL_KEY` and `ELEVENLABS_API_KEY` for ElevenLabs TTS and Kling avatar generation.
-  - Writes `script.md`, `output_audio/voiceover.mp3`, `kling_avatar_result.json`, `output_videos/kling_avatar.mp4`, `whisper_timestamps.json`, `output_videos/work/subtitles.ass`, `output_videos/final_subtitled.mp4`, `status.json`, and `learning.md`.
+  - Optional wording: `change her background to ...`.
+  - Injects `FAL_KEY` and `ELEVENLABS_API_KEY` for ElevenLabs TTS, optional Nano Banana reference editing, and Kling avatar generation.
+  - Writes `script.md`, optional `avatar_reference_result.json` and `output_images/avatar_reference.png`, `output_audio/voiceover.mp3`, `kling_avatar_result.json`, `output_videos/kling_avatar.mp4`, `whisper_timestamps.json`, `output_videos/work/subtitles.ass`, `output_videos/final_subtitled.mp4`, `status.json`, and `learning.md`.
 
 - `submit_voice_over_request.sh <client-id> <request-text-or-file> [character-id]`
   - Creates the Process B `voice_over` request.

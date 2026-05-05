@@ -1,0 +1,7 @@
+{
+  "character_id": "george",
+  "display_name": "George",
+  "reference_image": "reference.png",
+  "source": "nanobanana text-to-image",
+  "intended_use": "Reusable character reference for scripted Process B variants."
+}

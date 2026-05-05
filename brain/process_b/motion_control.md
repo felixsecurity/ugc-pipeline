@@ -14,7 +14,7 @@ Prepared runner:
 - `request.json` with:
   - `video_input`: URL or local path to the input video
   - `character_id`: defaults to `astrid`
-  - optional `direction`: background or outfit modification
+  - optional `direction`: free-form background, outfit, lighting, or scene modification
 - Character reference image:
   - `/srv/ugc-pipeline/characters/<character_id>/reference.png`
 
@@ -39,10 +39,11 @@ Prepared runner:
      framing, and camera perspective visible in the second frame.
    - Preserve character identity, face, age, hair, proportions, and recognizable
      appearance from the character reference.
-   - If `direction` includes a background change, apply that background or scene
-     instruction.
-   - If no background direction is present, keep the background, lighting,
-     camera angle, framing, and scene layout from the second frame.
+   - If `direction` is present, normalize the free-form request into explicit
+     wardrobe, background, lighting, and scene-edit instructions before sending
+     it to Nano Banana.
+   - If no direction is present, keep the background, lighting, camera angle,
+     framing, and scene layout from the second frame.
    - Keep the character unobstructed and suitable for motion control.
 7. Upload the generated pose reference and resolved input video to fal storage.
 8. Call:

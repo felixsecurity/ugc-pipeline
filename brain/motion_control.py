@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -34,6 +35,63 @@ DOWNLOADED_VIDEO_PATH = Path("output_videos") / "work" / "motion_control_input.m
 MIN_VIDEO_SECONDS = 3.0
 MAX_VIDEO_SECONDS = 30.05
 MAX_FAL_UPLOAD_BYTES = 10 * 1024 * 1024
+
+BACKGROUND_TERMS = (
+    "background",
+    "scene",
+    "setting",
+    "environment",
+    "location",
+    "room",
+    "kitchen",
+    "bedroom",
+    "studio",
+    "factory",
+    "street",
+    "outdoors",
+    "indoors",
+    "backdrop",
+)
+
+WARDROBE_TERMS = (
+    "outfit",
+    "wardrobe",
+    "clothes",
+    "clothing",
+    "wear",
+    "wearing",
+    "dress",
+    "shirt",
+    "top",
+    "tank",
+    "tank top",
+    "blouse",
+    "jacket",
+    "coat",
+    "pants",
+    "shorts",
+    "skirt",
+    "jeans",
+    "belt",
+    "necklace",
+    "shoes",
+    "sneakers",
+)
+
+LIGHTING_TERMS = (
+    "light",
+    "lighting",
+    "lit",
+    "color temperature",
+    "red to blue",
+    "blue to red",
+    "warm",
+    "cool",
+    "neon",
+    "glow",
+    "ambient",
+    "tone",
+)
 
 
 def now_utc() -> str:
@@ -172,6 +230,49 @@ def extract_first_image_url(result: dict[str, Any]) -> str:
     raise RuntimeError("Nano Banana edit result did not include an image URL")
 
 
+def normalize_free_form_direction(direction: str) -> str:
+    return re.sub(r"\s+", " ", direction).strip()
+
+
+def contains_any(value: str, terms: tuple[str, ...]) -> bool:
+    return any(term in value for term in terms)
+
+
+def build_direction_instructions(direction: str) -> list[str]:
+    clean_direction = normalize_free_form_direction(direction)
+    if not clean_direction:
+        return [
+            "Keep the background, camera angle, lighting, framing, and scene layout from the video frame.",
+        ]
+
+    normalized = clean_direction.lower()
+    lines = [
+        "Treat the client direction as a free-form visual edit brief and translate it into explicit image-edit instructions.",
+        f"Client direction: {clean_direction}",
+        "Preserve the supplied character identity and keep the result photorealistic and suitable for motion control.",
+    ]
+
+    if contains_any(normalized, WARDROBE_TERMS):
+        lines.append(
+            "Apply the requested wardrobe or outfit change to the supplied character reference, using visible clothing details from the source frame when the request refers to the source subject's outfit."
+        )
+
+    if contains_any(normalized, LIGHTING_TERMS):
+        lines.append("Apply the requested lighting or color-temperature change to the scene while keeping the image photorealistic.")
+
+    if contains_any(normalized, BACKGROUND_TERMS):
+        lines.append("Preserve or change the background or scene as requested, but keep the composition clean and readable for motion control.")
+
+    if "source frame" in normalized or "source video" in normalized or "source subject" in normalized:
+        lines.append("Treat references to the source frame or source subject as instructions to copy the visible scene details from the video frame.")
+
+    if "wear it" in normalized or "make the character wear" in normalized or "dress" in normalized:
+        lines.append("Make the supplied character wear the described outfit naturally, with believable fit and garment placement.")
+
+    lines.append("If the request is ambiguous, infer the most likely commercial image-edit interpretation rather than ignoring the detail.")
+    return lines
+
+
 def prepare_reference_for_upload(reference_image: Path) -> Path:
     if reference_image.stat().st_size <= MAX_FAL_UPLOAD_BYTES:
         return reference_image
@@ -241,20 +342,15 @@ def extract_second_frame(video_input: str, output_path: Path = SECOND_FRAME_PATH
     return output_path
 
 
-def build_pose_reference_prompt(character_id: str, direction: str) -> str:
-    background_rule = (
-        f"Apply this requested background or scene change: {direction}"
-        if direction
-        else "Keep the background, camera angle, lighting, framing, and scene layout from the video frame."
-    )
+def build_pose_reference_prompt(direction: str) -> str:
     return "\n".join(
         [
             "Create one clean photorealistic vertical character reference image for Kling motion control.",
             "Use the video frame as the pose, composition, body angle, limb placement, camera framing, and scene reference.",
-            f"Replace the person or subject in that video frame with {character_id} from the character reference image.",
-            f"Preserve {character_id}'s identity, face, age, hair, body proportions, and recognizable appearance from the character reference image.",
+            "Replace the person or subject in that video frame with the supplied character reference.",
+            "Preserve the character's identity, face, age, hair, body proportions, and recognizable appearance from the supplied character reference.",
             "Copy the pose from the video frame as exactly as possible, including head angle, torso angle, hands, arms, legs, balance, and body silhouette.",
-            background_rule,
+            *build_direction_instructions(direction),
             "Keep the character unobstructed and suitable as the starting image for video motion control.",
             "Do not add captions, subtitles, slogans, UI, title cards, watermarks, logos, stickers, generated text, or extra characters.",
         ]
@@ -264,7 +360,6 @@ def build_pose_reference_prompt(character_id: str, direction: str) -> str:
 def generate_pose_reference_image(
     fal_client: Any,
     character_dir: Path,
-    character_id: str,
     direction: str,
     second_frame_path: Path,
 ) -> tuple[str, dict[str, Any], str, str, str]:
@@ -276,7 +371,7 @@ def generate_pose_reference_image(
     reference_url = fal_client.upload_file(str(upload_reference))
     frame_url = fal_client.upload_file(str(second_frame_path))
 
-    prompt = build_pose_reference_prompt(character_id, direction)
+    prompt = build_pose_reference_prompt(direction)
     arguments = {
         "prompt": prompt,
         "image_urls": [reference_url, frame_url],
@@ -299,14 +394,13 @@ def generate_pose_reference_image(
     )
 
 
-def build_motion_prompt(character_id: str, direction: str) -> str:
+def build_motion_prompt(direction: str) -> str:
     lines = [
         "Transfer the exact body movement, timing, gesture rhythm, pose progression, camera movement, and action path from the reference video.",
-        f"Use {character_id} and the background/outfit shown in the supplied reference image as the generated video's character and visual setting.",
+        "Use the supplied character reference and the background or outfit shown in the supplied reference image as the generated video's character and visual setting.",
         "Do not reinterpret the motion. Preserve the reference video's movement direction, pace, framing changes, and action beats as closely as possible.",
     ]
-    if direction:
-        lines.append(f"Respect this requested visual modification in the image reference: {direction}")
+    lines.extend(build_direction_instructions(direction))
     lines.append("Keep the original sound from the reference video.")
     return " ".join(lines)
 
@@ -407,12 +501,11 @@ def run(request_path: Path, character_dir: Path) -> int:
     image_url, nano_edit, reference_path, upload_reference_path, frame_url = generate_pose_reference_image(
         fal_client,
         character_dir,
-        character_id,
         direction,
         second_frame_path,
     )
 
-    prompt = build_motion_prompt(character_id, direction)
+    prompt = build_motion_prompt(direction)
     write_status("running", "kling_motion_control", model=KLING_MOTION_CONTROL_MODEL)
     kling = run_motion_control(fal_client, image_url, video_input, prompt)
 

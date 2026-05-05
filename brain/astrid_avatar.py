@@ -31,11 +31,14 @@ import elevenlabs_tts
 
 DEFAULT_REQUEST_PATH = Path("request.json")
 DEFAULT_CHARACTER_DIR = Path(__file__).resolve().parents[1] / "characters" / "astrid"
+NANO_EDIT_MODEL = "fal-ai/nano-banana-2/edit"
 KLING_MODEL = "fal-ai/kling-video/ai-avatar/v2/standard"
 MAX_AUDIO_SECONDS = 60.0
 WHISPER_MODEL_DIR = Path(os.environ.get("UGC_WHISPER_MODEL_DIR", "/opt/ugc-pipeline-whisper"))
 SCRIPT_PATH = Path("script.md")
 AUDIO_PATH = Path("output_audio") / "voiceover.mp3"
+AVATAR_REFERENCE_PATH = Path("output_images") / "avatar_reference.png"
+AVATAR_REFERENCE_RESULT_PATH = Path("avatar_reference_result.json")
 AVATAR_RESULT_PATH = Path("kling_avatar_result.json")
 TIMESTAMPS_PATH = Path("whisper_timestamps.json")
 SUBTITLES_PATH = Path("output_videos") / "work" / "subtitles.ass"
@@ -91,6 +94,9 @@ def extract_script_from_request(request: dict[str, Any]) -> str:
         r"\buse\s+astrid\b.*?\bwith\s+the\s+script\s*:\s*[\"'“‘](.*?)[\"'”’]\s*$",
         r"\blet\s+astrid\s+say\s*:\s*[\"'“‘](.*?)[\"'”’]\s*$",
         r"\bastrid\s+says?\s*:\s*[\"'“‘](.*?)[\"'”’]\s*$",
+        r"\bshe\s+says?\s*:\s*[\"'“‘](.*?)[\"'”’]\s*$",
+        r"\bastrid\s+says?\s*[\"'“‘](.*?)[\"'”’]\s*$",
+        r"\bshe\s+says?\s*[\"'“‘](.*?)[\"'”’]\s*$",
         r"\bsay\s*:\s*[\"'“‘](.*?)[\"'”’]\s*$",
     ]
     for pattern in patterns:
@@ -101,6 +107,39 @@ def extract_script_from_request(request: dict[str, Any]) -> str:
                 return script
 
     raise ValueError('could not extract script. Expected a request like: Use Astrid and let her say: "..."')
+
+
+def extract_background_direction(request: dict[str, Any]) -> str:
+    for key in ("background_direction", "background", "scene_direction", "visual_direction"):
+        value = str(request.get(key) or "").strip()
+        if value:
+            return value
+
+    prompt = str(request.get("prompt") or request.get("client_request") or "").strip()
+    if not prompt:
+        return ""
+
+    labels = (
+        "background direction",
+        "background",
+        "scene direction",
+        "visual direction",
+        "scene",
+    )
+    label_pattern = "|".join(re.escape(label) for label in labels)
+    label_match = re.search(rf"(?:{label_pattern})\s*:\s*(.+?)(?:\b(?:she|astrid)\s+says?\b|$)", prompt, flags=re.IGNORECASE | re.DOTALL)
+    if label_match:
+        return label_match.group(1).strip(" .:-")
+
+    change_match = re.search(
+        r"\bchange\s+(?:her\s+)?background\s+(?:into|to)\s+(.+?)(?:\b(?:she|astrid)\s+says?\b|$)",
+        prompt,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if change_match:
+        return change_match.group(1).strip(" .:-")
+
+    return ""
 
 
 def save_script(script: str, path: Path = SCRIPT_PATH) -> Path:
@@ -164,7 +203,34 @@ def download_file(url: str, path: Path) -> None:
     path.chmod(0o600)
 
 
-def run_kling_avatar(character_dir: Path, audio_path: Path) -> dict[str, Any]:
+def extract_first_image_url(result: dict[str, Any]) -> str:
+    images = result.get("images")
+    if isinstance(images, list) and images:
+        url = images[0].get("url")
+        if url:
+            return str(url)
+    image = result.get("image")
+    if isinstance(image, dict) and image.get("url"):
+        return str(image["url"])
+    raise RuntimeError("Nano Banana edit result did not include an image URL")
+
+
+def build_avatar_reference_prompt(background_direction: str) -> str:
+    return "\n".join(
+        [
+            "Create one photorealistic vertical talking-avatar reference image.",
+            "Preserve Astrid's identity, face, age, blonde hair, body proportions, outfit continuity, and recognizable appearance from the input reference image.",
+            "Keep Astrid framed as a clean UGC presenter, facing camera, upper body visible, natural room lighting, realistic hands, stable anatomy.",
+            f"Replace only the background with this requested scene: {background_direction}",
+            "Keep Astrid unobstructed and suitable for an AI talking-head avatar video.",
+            "Do not add captions, subtitles, slogans, UI, title cards, watermarks, logos, stickers, generated text, or extra people.",
+        ]
+    )
+
+
+def generate_avatar_reference_image(character_dir: Path, background_direction: str) -> dict[str, Any] | None:
+    if not background_direction:
+        return None
     if "FAL_KEY" not in os.environ or not os.environ["FAL_KEY"].strip():
         raise RuntimeError("FAL_KEY is not set. Put it in /etc/ugc-pipeline/fal.env for supervisor injection.")
 
@@ -176,6 +242,48 @@ def run_kling_avatar(character_dir: Path, audio_path: Path) -> dict[str, Any]:
     reference_image = character_dir / "reference.png"
     if not reference_image.is_file():
         raise FileNotFoundError(f"missing Astrid reference image: {reference_image}")
+
+    reference_url = fal_client.upload_file(str(reference_image))
+    prompt = build_avatar_reference_prompt(background_direction)
+    arguments = {
+        "prompt": prompt,
+        "image_urls": [reference_url],
+        "num_images": 1,
+        "aspect_ratio": "9:16",
+        "output_format": "png",
+        "safety_tolerance": "1",
+        "resolution": "2K",
+        "limit_generations": True,
+    }
+    result = fal_client.subscribe(NANO_EDIT_MODEL, arguments=arguments, with_logs=True, client_timeout=300)
+    image_url = extract_first_image_url(result)
+    download_file(image_url, AVATAR_REFERENCE_PATH)
+    output = {
+        "model": NANO_EDIT_MODEL,
+        "arguments": arguments,
+        "result": result,
+        "source_reference_path": str(reference_image),
+        "reference_url": reference_url,
+        "image_url": image_url,
+        "path": str(AVATAR_REFERENCE_PATH),
+        "background_direction": background_direction,
+    }
+    write_json(AVATAR_REFERENCE_RESULT_PATH, output)
+    return output
+
+
+def run_kling_avatar(character_dir: Path, audio_path: Path, avatar_reference: dict[str, Any] | None = None) -> dict[str, Any]:
+    if "FAL_KEY" not in os.environ or not os.environ["FAL_KEY"].strip():
+        raise RuntimeError("FAL_KEY is not set. Put it in /etc/ugc-pipeline/fal.env for supervisor injection.")
+
+    try:
+        import fal_client
+    except ImportError as exc:
+        raise RuntimeError("fal-client is not installed. Install it in /opt/ugc-pipeline-venv.") from exc
+
+    reference_image = Path(str(avatar_reference["path"])) if avatar_reference else character_dir / "reference.png"
+    if not reference_image.is_file():
+        raise FileNotFoundError(f"missing Astrid avatar reference image: {reference_image}")
     if not audio_path.is_file():
         raise FileNotFoundError(f"missing voiceover audio: {audio_path}")
 
@@ -184,7 +292,7 @@ def run_kling_avatar(character_dir: Path, audio_path: Path) -> dict[str, Any]:
     arguments = {
         "image_url": image_url,
         "audio_url": audio_url,
-        "prompt": "Natural UGC talking-head delivery. Preserve Astrid's appearance from the reference image and synchronize lip movement to the supplied voiceover.",
+        "prompt": "Natural UGC talking-head delivery. Preserve Astrid's appearance and background from the reference image and synchronize lip movement to the supplied voiceover.",
     }
     result = fal_client.subscribe(KLING_MODEL, arguments=arguments, with_logs=True, client_timeout=900)
     video_url = result.get("video", {}).get("url")
@@ -202,6 +310,7 @@ def run_kling_avatar(character_dir: Path, audio_path: Path) -> dict[str, Any]:
         },
         "result": result,
         "downloaded_video": str(raw_video_path),
+        "avatar_reference": avatar_reference,
     }
     write_json(AVATAR_RESULT_PATH, output)
     return output
@@ -346,7 +455,13 @@ def burn_subtitles(video_path: Path, subtitles_path: Path, output_path: Path = F
     return output_path
 
 
-def append_learning(script: str, audio_duration: float, final_video_path: Path) -> None:
+def append_learning(
+    script: str,
+    audio_duration: float,
+    final_video_path: Path,
+    background_direction: str,
+    avatar_reference: dict[str, Any] | None,
+) -> None:
     lines = [
         "# Learning",
         "",
@@ -355,6 +470,18 @@ def append_learning(script: str, audio_duration: float, final_video_path: Path) 
         f"- Script path: {SCRIPT_PATH}",
         f"- Voiceover path: {AUDIO_PATH}",
         f"- Voiceover duration seconds: {audio_duration:.3f}",
+        f"- Avatar background edit: {'yes' if avatar_reference else 'no'}",
+    ]
+    if avatar_reference:
+        lines.extend(
+            [
+                f"- Background direction: {background_direction}",
+                f"- Edited avatar reference: {avatar_reference['path']}",
+                f"- Avatar reference model: {NANO_EDIT_MODEL}",
+            ]
+        )
+    lines.extend(
+        [
         f"- Avatar model: {KLING_MODEL}",
         f"- Whisper model: base",
         f"- Final subtitled video: {final_video_path}",
@@ -364,7 +491,8 @@ def append_learning(script: str, audio_duration: float, final_video_path: Path) 
         "",
         script,
         "",
-    ]
+        ]
+    )
     LEARNING_PATH.write_text("\n".join(lines), encoding="utf-8")
     LEARNING_PATH.chmod(0o600)
 
@@ -375,6 +503,7 @@ def run(request_path: Path, character_dir: Path) -> int:
 
     request = load_request(request_path)
     script = extract_script_from_request(request)
+    background_direction = extract_background_direction(request)
     script_path = save_script(script)
 
     write_status("running", "elevenlabs_tts", script_path=str(script_path))
@@ -386,8 +515,13 @@ def run(request_path: Path, character_dir: Path) -> int:
     write_status("running", "audio_prevalidation", audio_path=str(AUDIO_PATH))
     audio_duration = validate_audio_length(AUDIO_PATH)
 
+    avatar_reference = None
+    if background_direction:
+        write_status("running", "nano_banana_avatar_reference", model=NANO_EDIT_MODEL, background_direction=background_direction)
+        avatar_reference = generate_avatar_reference_image(character_dir, background_direction)
+
     write_status("running", "kling_avatar", model=KLING_MODEL)
-    avatar = run_kling_avatar(character_dir, AUDIO_PATH)
+    avatar = run_kling_avatar(character_dir, AUDIO_PATH, avatar_reference)
     raw_video_path = Path(str(avatar["downloaded_video"]))
 
     write_status("running", "whisper_timestamps", model="base")
@@ -396,7 +530,7 @@ def run(request_path: Path, character_dir: Path) -> int:
 
     write_status("running", "subtitle_burn", subtitles_path=str(subtitles_path))
     final_video_path = burn_subtitles(raw_video_path, subtitles_path)
-    append_learning(script, audio_duration, final_video_path)
+    append_learning(script, audio_duration, final_video_path, background_direction, avatar_reference)
 
     write_status(
         "succeeded",
@@ -407,6 +541,8 @@ def run(request_path: Path, character_dir: Path) -> int:
         audio_path=str(AUDIO_PATH),
         audio_duration_seconds=round(audio_duration, 3),
         raw_video_path=str(raw_video_path),
+        background_direction=background_direction,
+        avatar_reference_path=str(avatar_reference["path"]) if avatar_reference else "",
         timestamps_path=str(TIMESTAMPS_PATH),
         subtitles_path=str(subtitles_path),
         final_video_path=str(final_video_path),

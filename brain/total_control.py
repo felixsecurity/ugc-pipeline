@@ -223,9 +223,14 @@ def encode_multipart_form(fields: dict[str, str], files: dict[str, tuple[str, by
     return b"".join(chunks), boundary
 
 
-def voice_change_speech(api_key: str, source_audio_path: Path, output_path: Path = VOICE_CHANGED_AUDIO_PATH) -> dict[str, Any]:
+def voice_change_speech(
+    api_key: str,
+    source_audio_path: Path,
+    voice_profile: dict[str, str],
+    output_path: Path = VOICE_CHANGED_AUDIO_PATH,
+) -> dict[str, Any]:
     query = urllib.parse.urlencode({"output_format": elevenlabs_tts.OUTPUT_FORMAT})
-    url = f"{elevenlabs_tts.API_BASE_URL}/speech-to-speech/{elevenlabs_tts.VOICE_ID}?{query}"
+    url = f"{elevenlabs_tts.API_BASE_URL}/speech-to-speech/{voice_profile['voice_id']}?{query}"
     body, boundary = encode_multipart_form(
         fields={
             "model_id": ELEVENLABS_STS_MODEL_ID,
@@ -267,8 +272,8 @@ def voice_change_speech(api_key: str, source_audio_path: Path, output_path: Path
         "content_type": content_type,
         "request_id": request_id,
         "bytes_written": len(audio),
-        "voice_name": elevenlabs_tts.VOICE_NAME,
-        "voice_id": elevenlabs_tts.VOICE_ID,
+        "voice_name": voice_profile["voice_name"],
+        "voice_id": voice_profile["voice_id"],
         "model_id": ELEVENLABS_STS_MODEL_ID,
         "output_format": elevenlabs_tts.OUTPUT_FORMAT,
     }
@@ -696,7 +701,7 @@ def write_learning(
         f"- Source video duration seconds: {source_duration:.3f}",
         f"- Voice changed audio: {VOICE_CHANGED_AUDIO_PATH}",
         f"- Voice changed duration seconds: {voice_changed_duration:.3f}",
-        f"- Destination voice: {elevenlabs_tts.VOICE_NAME} ({elevenlabs_tts.VOICE_ID})",
+        f"- Destination voice: {voice_profile['voice_name']} ({voice_profile['voice_id']})",
         f"- Voice conversion model: {ELEVENLABS_STS_MODEL_ID}",
         f"- Pose source frame: {second_frame_path}",
         f"- Generated motion reference image: {pose_reference['path']}",
@@ -726,6 +731,7 @@ def run(request_path: Path, character_dir: Path) -> int:
     request = load_request(request_path)
     character_id = resolve_character_id(request, character_dir)
     direction = extract_direction(request)
+    voice_profile = elevenlabs_tts.resolve_voice_profile(request.get("voice_name") or request.get("voice_id"))
     video_input = resolve_video_input(request)
     source_duration = probe_media_seconds(video_input)
 
@@ -754,8 +760,8 @@ def run(request_path: Path, character_dir: Path) -> int:
     write_status("running", "extract_source_audio")
     source_audio_path = extract_audio(video_input)
 
-    write_status("running", "elevenlabs_voice_change", voice_id=elevenlabs_tts.VOICE_ID)
-    voice_change = voice_change_speech(api_key, source_audio_path)
+    write_status("running", "elevenlabs_voice_change", voice_id=voice_profile["voice_id"])
+    voice_change = voice_change_speech(api_key, source_audio_path, voice_profile)
     voice_changed_duration = probe_media_seconds(str(VOICE_CHANGED_AUDIO_PATH))
 
     write_status("running", "mux_voice_changed_driver")
@@ -777,6 +783,8 @@ def run(request_path: Path, character_dir: Path) -> int:
     plan = {
         "mode": "total_control",
         "character_id": character_id,
+        "voice_name": voice_profile["voice_name"],
+        "voice_id": voice_profile["voice_id"],
         "direction": direction,
         "video_input": video_input,
         "source_duration_seconds": source_duration,
@@ -830,6 +838,8 @@ def run(request_path: Path, character_dir: Path) -> int:
         mode="total_control",
         elapsed_seconds=round(elapsed_seconds, 3),
         character_id=character_id,
+        voice_name=voice_profile["voice_name"],
+        voice_id=voice_profile["voice_id"],
         input_video=video_input,
         second_frame_path=str(second_frame_path),
         pose_reference_path=str(pose_reference["path"]),

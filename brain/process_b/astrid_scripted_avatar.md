@@ -18,6 +18,8 @@ Prepared runner:
 - `request.json` containing either:
   - `script`: exact spoken script, or
   - `prompt` / `client_request`: a phrase matching `Use Astrid and let her say: "..."`
+  - optional `background_direction`, `background`, `scene_direction`, or a prompt
+    phrase such as `change her background to ...`
 - Character reference image:
   - `/srv/ugc-pipeline/characters/astrid/reference.png`
 
@@ -34,24 +36,30 @@ Prepared runner:
    - style exaggeration: `0.23`
    - format: `mp3_44100_128`
 3. Prevalidate the MP3 with `ffprobe`; duration must be less than 60 seconds.
-4. Upload Astrid's reference image and the MP3 to fal storage.
-5. Invoke `fal-ai/kling-video/ai-avatar/v2/standard` with:
+4. If a background direction is present, call `fal-ai/nano-banana-2/edit` with
+   Astrid's reference image to create `output_images/avatar_reference.png`.
+   Preserve Astrid's identity and replace only the background.
+5. Upload the original or edited Astrid reference image and the MP3 to fal
+   storage.
+6. Invoke `fal-ai/kling-video/ai-avatar/v2/standard` with:
    - `image_url`: uploaded Astrid reference image URL
    - `audio_url`: uploaded ElevenLabs MP3 URL
    - `prompt`: natural UGC talking-head delivery, preserve Astrid appearance, sync lips to the supplied voiceover
-6. Download the returned MP4 to `output_videos/kling_avatar.mp4`.
-7. Run Whisper base on the MP3 and save timestamps to `whisper_timestamps.json`.
-8. Convert timestamps into short social subtitles:
+7. Download the returned MP4 to `output_videos/kling_avatar.mp4`.
+8. Run Whisper base on the MP3 and save timestamps to `whisper_timestamps.json`.
+9. Convert timestamps into short social subtitles:
    - few words per screen
    - large white text
    - black outline/border
    - centered social-media composition
-9. Burn subtitles into the video with ffmpeg and write
+10. Burn subtitles into the video with ffmpeg and write
    `output_videos/final_subtitled.mp4`.
 
 ## Outputs
 
 - `script.md`
+- optional `avatar_reference_result.json`
+- optional `output_images/avatar_reference.png`
 - `output_audio/voiceover.mp3`
 - `kling_avatar_result.json`
 - `output_videos/kling_avatar.mp4`

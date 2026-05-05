@@ -35,13 +35,18 @@ Supported image extensions:
 3. Generate `output_audio/voiceover.mp3` with the same ElevenLabs TTS
    configuration as the other speech modes:
    - model: `eleven_multilingual_v2`
-   - voice: Riley
-   - voice ID: `hA4zGnmTwX2NQiTRMt7o`
+   - default voice: Riley
+   - additional registered voice: Alex
+   - default voice ID: `hA4zGnmTwX2NQiTRMt7o`
+   - Alex voice ID: `uf0ZrRtyyJlbbGIn43uD`
    - speed: `0.92`
    - stability: `0.78`
    - similarity boost: `0.85`
    - style exaggeration: `0.23`
    - format: `mp3_44100_128`
+
+The slide-show runner accepts optional `--voice-name` or `--voice-id` to select
+between the registered voices.
 4. Run Whisper base on the generated MP3 and save timestamps to
    `whisper_timestamps.json`.
 5. Align each non-empty script line to the Whisper word timeline in order.

@@ -48,8 +48,10 @@ Prepared runner:
 7. Call ElevenLabs speech-to-speech to convert the source performance into the
    same destination voice used by the other Process B scripts:
    - speech-to-speech model: `eleven_multilingual_sts_v2`
-   - voice: Riley
-   - voice ID: `hA4zGnmTwX2NQiTRMt7o`
+   - default voice: Riley
+   - additional registered voice: Alex
+   - default voice ID: `hA4zGnmTwX2NQiTRMt7o`
+   - Alex voice ID: `uf0ZrRtyyJlbbGIn43uD`
    - speed: `0.92`
    - stability: `0.78`
    - similarity boost: `0.85`
