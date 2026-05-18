@@ -73,6 +73,13 @@ Important phases:
 - `done`
 - `failed`
 
+Notes:
+
+- The Kling motion-control step uses `fal-ai/kling-video/v3/standard/motion-control`.
+- In this batch pipeline, that v3 standard endpoint is schema-compatible with the
+  previous v2.6 motion-control integration. The orchestrator still submits the same
+  request shape and still expects `result["video"]["url"]` on completion.
+
 ## `events.log`
 
 One JSON object per line.

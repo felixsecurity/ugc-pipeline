@@ -20,7 +20,7 @@ from time import monotonic
 from typing import Any
 
 NANO_EDIT_MODEL = "fal-ai/nano-banana-2/edit"
-KLING_MOTION_CONTROL_MODEL = "fal-ai/kling-video/v2.6/standard/motion-control"
+KLING_MOTION_CONTROL_MODEL = "fal-ai/kling-video/v3/standard/motion-control"
 CHARACTERS_DIR = Path(__file__).resolve().parents[1] / "characters"
 ORCHESTRATE_PATH = Path("orchestrate.json")
 EVENTS_PATH = Path("events.log")
@@ -31,10 +31,11 @@ MAX_VIDEO_SECONDS = 30.05
 MAX_FAL_UPLOAD_BYTES = 10 * 1024 * 1024
 NANO_POLL_SECONDS = 10
 KLING_POLL_SECONDS = 150
-NANO_RETRY_LIMIT = 1
+NANO_RETRY_LIMIT = 2
 GLOBAL_NEGATIVES = ["No text on screen.", "No text overlays."]
 STATUS_DONE = "done"
 STATUS_FAILED = "failed"
+SOURCE_TRIM_SCRIPT = Path(__file__).resolve().with_name("trim_video_edges.py")
 
 BACKGROUND_TERMS = (
     "background",
@@ -241,6 +242,35 @@ def extract_second_frame(video_input: Path, output_path: Path) -> Path:
     return output_path
 
 
+def preprocess_source_video(video: dict[str, Any]) -> tuple[Path, dict[str, Any]]:
+    source_video = Path(video["source_video"])
+    trimmed_video = Path(video["artifacts"]["preprocessed_source_video"])
+    report_path = Path(video["artifacts"]["preprocess_report"])
+    if trimmed_video.is_file() and report_path.is_file():
+        report = load_json(report_path)
+        video["working_source_video"] = str(trimmed_video)
+        video["preprocess_report"] = report
+        return trimmed_video, report
+
+    run_command(
+        [
+            sys.executable,
+            str(SOURCE_TRIM_SCRIPT),
+            "--input",
+            str(source_video),
+            "--output",
+            str(trimmed_video),
+            "--report",
+            str(report_path),
+        ]
+    )
+    report = load_json(report_path)
+    video["working_source_video"] = str(trimmed_video)
+    video["preprocess_report"] = report
+    video["timings"]["source_preprocessed_at"] = now_utc()
+    return trimmed_video, report
+
+
 def prepare_reference_for_upload(reference_image: Path, output_path: Path) -> Path:
     if reference_image.stat().st_size <= MAX_FAL_UPLOAD_BYTES:
         return reference_image
@@ -350,7 +380,9 @@ def parse_characters_field(value: str) -> tuple[list[dict[str, str]], str]:
         return [{"character_id": character_id, "placement": "center", "label": "subject"}], character_id
 
     placements: list[dict[str, str]] = []
-    for segment in [part.strip() for part in stripped.split(".") if part.strip()]:
+    normalized = stripped.replace(" and ", ",")
+    normalized = normalized.replace(";", ",")
+    for segment in [part.strip() for part in re.split(r"[.,]", normalized) if part.strip()]:
         if ":" not in segment:
             continue
         role, name = segment.split(":", 1)
@@ -526,13 +558,13 @@ def build_nano_prompt(brief: dict[str, Any]) -> str:
     return " ".join(lines)
 
 
-def build_nano_retry_prompt(brief: dict[str, Any]) -> str:
-    base_prompt = build_nano_prompt(brief)
-    retry_addendum = (
-        " Retry variant: keep the same pose, identity, and framing, but favor a cleaner, less cluttered composition, "
-        "simpler background geometry, and a stronger single-subject silhouette so the generator can return one valid output."
-    )
-    return base_prompt + retry_addendum
+def build_nano_retry_prompt(brief: dict[str, Any], retry_number: int = 1) -> str:
+    # Nano Banana retries must stay extremely short. If the initial prompt fails,
+    # we want to reduce the request to a minimal character placement instruction
+    # instead of silently drifting into a different generation goal.
+    _ = retry_number
+    _ = brief
+    return "Place the character in the source image. Retain clothing and position from the source image."
 
 
 def build_kling_prompt(brief: dict[str, Any]) -> str:
@@ -592,6 +624,8 @@ def initial_video_state(batch_dir: Path, request: dict[str, Any], global_rules: 
             "request_json": str(video_dir / "request.json"),
             "prompt_brief": str(video_dir / "prompt_brief.json"),
             "invocation_plan": str(video_dir / "invocation_plan.json"),
+            "preprocessed_source_video": str(video_dir / "output_videos" / "source_preprocessed.mp4"),
+            "preprocess_report": str(video_dir / "source_preprocess.json"),
             "second_frame": str(video_dir / "output_images" / "motion_control_frame_02.png"),
             "pose_reference": str(video_dir / "output_images" / "motion_control_reference.png"),
             "upload_reference": str(video_dir / "output_images" / "motion_control_reference_upload.jpg"),
@@ -800,13 +834,32 @@ def phase_build_prompt_package(batch_dir: Path, video_id: str, video: dict[str, 
     started = monotonic()
     video_dir = ensure_video_layout(video)
     request = video["request"]
-    source_video = Path(video["source_video"])
+    preprocess_started = monotonic()
+    source_video, preprocess_report = preprocess_source_video(video)
+    event(
+        batch_dir,
+        video_id,
+        "prompting",
+        "source_video_preprocessed",
+        duration_ms=int((monotonic() - preprocess_started) * 1000),
+        details={
+            "original_source_video": video["source_video"],
+            "working_source_video": str(source_video),
+            "trimmed": bool(preprocess_report.get("trimmed")),
+            "trim_start_seconds": preprocess_report.get("trim_start_seconds"),
+            "trim_end_seconds": preprocess_report.get("trim_end_seconds"),
+        },
+    )
     duration_s = probe_video_seconds(source_video)
     if duration_s < MIN_VIDEO_SECONDS or duration_s > MAX_VIDEO_SECONDS:
         raise ValueError(
             f"input video duration must be between {MIN_VIDEO_SECONDS:.0f}s and {MAX_VIDEO_SECONDS:.2f}s; got {duration_s:.3f}s for {source_video}"
         )
     brief = build_prompt_brief(request, request["global_rules"], source_video, duration_s)
+    brief["original_source_video"] = video["source_video"]
+    brief["working_source_video"] = str(source_video)
+    brief["preprocess_report"] = preprocess_report
+    brief["original_source_video_duration_seconds"] = round(float(preprocess_report["input_duration_seconds"]), 3)
     nano_prompt = build_nano_prompt(brief)
     kling_prompt = build_kling_prompt(brief)
     write_json(Path(video["artifacts"]["request_json"]), request)
@@ -839,7 +892,7 @@ def submit_nano(fal_client: Any, video: dict[str, Any]) -> tuple[str, dict[str, 
         reference_inputs.append(fal_client.upload_file(str(prepared)))
     frame_url = fal_client.upload_file(video["artifacts"]["second_frame"])
     arguments = {
-        "prompt": video["nano_prompt"] if attempt == 0 else build_nano_retry_prompt(brief),
+        "prompt": video["nano_prompt"] if attempt == 0 else build_nano_retry_prompt(brief, attempt),
         "image_urls": [*reference_inputs, frame_url],
         "num_images": 1,
         "aspect_ratio": "9:16",
@@ -966,8 +1019,11 @@ def phase_poll_nano(batch_dir: Path, fal_client: Any, video_id: str, video: dict
 
 
 def submit_kling(fal_client: Any, video: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    # Kling must always consume the Nano Banana-generated character reference.
+    # If Nano Banana cannot produce that reference after its bounded retries,
+    # the clip must hard-fail instead of silently falling back to the source frame.
     image_url = video["remote"]["nano"]["image_url"]
-    source_video = video["source_video"]
+    source_video = video.get("working_source_video") or video["source_video"]
     video_url = source_video if is_url(source_video) else fal_client.upload_file(source_video)
     arguments = {
         "prompt": video["kling_prompt"],
@@ -1076,18 +1132,33 @@ def phase_confirm(batch_dir: Path, video_id: str, video: dict[str, Any]) -> None
         f"- Video ID: `{video_id}`",
         "- Mode: motion_control",
         f"- Source video: {video['source_video']}",
+        f"- Working source video: {video.get('working_source_video', video['source_video'])}",
         f"- Prompt brief: {video['artifacts']['prompt_brief']}",
         f"- Nano Banana result: {video['artifacts']['nano_result']}",
         f"- Kling result: {video['artifacts']['kling_result']}",
         f"- Final video: {video['artifacts']['final_video']}",
         "",
-        "## Prompting Notes",
-        "",
-        "The prompt package was built from normalized request constraints rather than direct string concatenation.",
-        "",
-        "## Character Layout",
+        "## Preprocessing",
         "",
     ]
+    preprocess_report = video.get("preprocess_report")
+    if isinstance(preprocess_report, dict):
+        lines.append(f"- Trimmed intro: {preprocess_report.get('trimmed_intro')}")
+        lines.append(f"- Trimmed outro: {preprocess_report.get('trimmed_outro')}")
+        lines.append(
+            f"- Trim window: {preprocess_report.get('trim_start_seconds')}s to {preprocess_report.get('trim_end_seconds')}s"
+        )
+        lines.append(f"- Output duration: {preprocess_report.get('output_duration_seconds')}s")
+    lines.extend(
+        [
+            "## Prompting Notes",
+            "",
+            "The prompt package was built from normalized request constraints rather than direct string concatenation.",
+            "",
+            "## Character Layout",
+            "",
+        ]
+    )
     for character in brief["character_layout"]:
         lines.append(f"- {character['character_id']} at {character['placement']}")
     lines.extend(["", "## Global Rules", ""])

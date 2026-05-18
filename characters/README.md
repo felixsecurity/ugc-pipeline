@@ -15,3 +15,4 @@ The current character library contains:
 
 - `astrid`: blonde UGC presenter reference, sourced from `/srv/ugc_4k_blonde.png`.
 - `george`: 48-year-old male character reference, generated with Nano Banana text-to-image.
+- `poca`: 22-year-old Indigenous Latin American young adult woman, generated with Nano Banana 2.

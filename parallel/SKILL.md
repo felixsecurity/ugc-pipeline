@@ -8,6 +8,7 @@ archive with multiple input videos plus one `instructions.txt`.
 - Unpack a batch archive under `/srv/`
 - Parse `instructions.txt` into structured per-video requests
 - Build explicit prompt artifacts rather than gluing raw strings together
+- Preprocess each source video with deterministic ffmpeg trimming before prompt construction
 - Submit Nano Banana and Kling work inline from one orchestrator
 - Overlap prompt work with remote waits across multiple videos
 - Record durable scheduler state in `orchestrate.json`
@@ -15,6 +16,7 @@ archive with multiple input videos plus one `instructions.txt`.
 - Produce `reflection.md` from those events
 - Publish any successful finals to `/var/www/html/<batch_name>/`, even when
   the batch ends in a mixed terminal state
+- Trim black lead-in frames and TikTok outro frames with a standalone Python helper that does not require LLM frame inspection
 
 ## Inputs
 
@@ -22,6 +24,12 @@ archive with multiple input videos plus one `instructions.txt`.
   - `.zip`
   - `.tar.gz`
 - Or an already-unpacked batch folder under `/srv/`
+
+## Environment
+
+- The batch runner expects `FAL_KEY` to be available in the shell environment.
+- The repository convention is to source `/etc/ugc-pipeline/fal.env` before running `run_batch.sh` manually.
+- In supervised deployments, that same file is injected by the supervisor instead of being committed into the repo.
 
 ## Required Batch Layout After Unpack
 
@@ -39,12 +47,14 @@ archive with multiple input videos plus one `instructions.txt`.
   - `videos/<video_id>/request.json`
   - `videos/<video_id>/prompt_brief.json`
   - `videos/<video_id>/invocation_plan.json`
+  - `videos/<video_id>/source_preprocess.json`
   - `videos/<video_id>/nano_banana_result.json`
   - `videos/<video_id>/kling_motion_control_result.json`
   - `videos/<video_id>/status.json`
   - `videos/<video_id>/learning.md`
   - `videos/<video_id>/output_images/...`
   - `videos/<video_id>/output_videos/...`
+  - `videos/<video_id>/output_videos/source_preprocessed.mp4`
 - world-visible:
   - `/var/www/html/<batch_name>/<video_id>.mp4`
 
@@ -52,6 +62,7 @@ archive with multiple input videos plus one `instructions.txt`.
 
 - Treat prompt construction as a reasoning step.
 - First normalize user intent into explicit visual and motion constraints.
+- Preprocess the source clip before prompting so downstream model inputs exclude black lead-in and TikTok outro frames.
 - Preserve identity and position for all named characters.
 - Preserve exact movement and timing in Kling prompts.
 - Always include:

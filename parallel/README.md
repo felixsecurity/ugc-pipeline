@@ -13,12 +13,20 @@ should overlap remote waits instead of processing videos sequentially.
 - Current request type:
   - `motion_control`
 
+The orchestrator currently targets `fal-ai/kling-video/v3/standard/motion-control`.
+For this pipeline, the v3 standard motion-control API is a drop-in replacement for
+v2.6: the request still accepts `prompt`, `image_url`, `video_url`,
+`character_orientation`, and `keep_original_sound`, and the result still returns
+`video.url`.
+
 ## Files Created In The Batch Root
 
 - `orchestrate.json`: durable scheduler state and per-video metadata
 - `events.log`: JSONL event stream
 - `reflection.md`: generated summary of elapsed time, waits, bottlenecks, and per-video outcomes
-- `videos/<video_id>/...`: per-video artifacts and outputs
+- `videos/<video_id>/...`: per-video artifacts and outputs, including a preprocessed source clip with lead-in and TikTok outro trimmed away before prompt construction
+  - `videos/<video_id>/source_preprocess.json`
+  - `videos/<video_id>/output_videos/source_preprocessed.mp4`
 
 ## Published Outputs
 
@@ -38,6 +46,7 @@ public tree whenever the completed set changes, including late retry recoveries.
 - `unpack_batch.sh`: unpack an archive under `/srv/`
 - `run_batch.sh`: run the orchestrator and final reflection step
 - `orchestrate_batch.py`: inline Nano Banana and Kling scheduler
+- `trim_video_edges.py`: deterministic ffmpeg-based preprocessing for black opening frames and the TikTok outro
 - `analyze_events.py`: derive `reflection.md` from `events.log`
 
 ## Execution Model
@@ -61,10 +70,11 @@ Prompt generation is deliberate rather than raw string concatenation:
 1. Parse `instructions.txt` into structured intent.
 2. Normalize visual constraints and motion requirements.
 3. Resolve character references such as `Astrid` and `George`.
-4. Build model-specific prompts for:
+4. Preprocess the source video to remove black lead-in frames and the TikTok outro when detected.
+5. Build model-specific prompts for:
    - Nano Banana pose/reference generation
    - Kling motion transfer
-5. Persist prompt artifacts for auditability before invocation.
+6. Persist prompt artifacts for auditability before invocation.
 
 Global negatives are always enforced:
 
@@ -84,15 +94,19 @@ reduce repeat generation failures.
 - Python runtime: `/opt/ugc-pipeline-venv/bin/python`
 - Required env var:
   - `FAL_KEY`
+- Runtime source of `FAL_KEY`:
+  - `/etc/ugc-pipeline/fal.env`
 - Host tools:
   - `ffmpeg`
   - `ffprobe`
+
+When running the batch manually, source `/etc/ugc-pipeline/fal.env` in the same shell before invoking `run_batch.sh`, or ensure the supervisor injects it into the environment.
 
 ## Syntax Verification
 
 The implementation is intended to be syntax-checked without running jobs:
 
 ```sh
-python -m py_compile /srv/ugc-pipeline/parallel/orchestrate_batch.py /srv/ugc-pipeline/parallel/analyze_events.py
+python -m py_compile /srv/ugc-pipeline/parallel/orchestrate_batch.py /srv/ugc-pipeline/parallel/analyze_events.py /srv/ugc-pipeline/parallel/trim_video_edges.py
 bash -n /srv/ugc-pipeline/parallel/unpack_batch.sh /srv/ugc-pipeline/parallel/run_batch.sh
 ```
